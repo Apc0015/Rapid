@@ -1,1296 +1,1059 @@
-import copy
-import streamlit as st
-import requests
+"""
+RAPID v2 — Streamlit UI  (Claude / ChatGPT-style layout)
+"""
+
 import os
-import uuid
-from datetime import datetime
-from app.services.llm_service import LLMManager
-from app.services.embedding_service import EmbeddingManager
+import requests
+import streamlit as st
+from typing import Optional
 
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:3000")
 
-# Page configuration
 st.set_page_config(
     page_title="RAPID",
-    page_icon="🤖",
-    layout="centered",
-    initial_sidebar_state="auto"
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# Minimal custom CSS
+# ─────────────────────────────────────────────────────────────────────────────
+# CSS
+# ─────────────────────────────────────────────────────────────────────────────
+
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+/* ── chrome ── */
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
+
+/* ── sidebar shell ── */
+[data-testid="stSidebar"] {
+    background: #171717 !important;
+    border-right: 1px solid #2d2d2d !important;
+}
+[data-testid="stSidebar"] > div:first-child { padding: 0 !important; }
+
+/* ── sidebar all text ── */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div { color: #8e8ea0; }
+
+/* ── sidebar buttons (New chat / Sign out) ── */
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    border: 1px solid #3d3d3d !important;
+    color: #ececf1 !important;
+    text-align: left !important;
+    width: 100% !important;
+    padding: 8px 14px !important;
+    border-radius: 6px !important;
+    font-size: 0.88rem !important;
+    font-weight: 400 !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #2a2a2a !important;
+    border-color: #555 !important;
+}
+
+/* ── nav radio: hide the circle widget ── */
+[data-testid="stSidebar"] [data-testid="stRadio"] > div > label > div:first-child {
+    display: none !important;
+}
+/* hide the "Navigation" group label */
+[data-testid="stSidebar"] [data-testid="stRadio"] > label {
+    display: none !important;
+}
+/* each nav option label */
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    padding: 9px 14px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    width: 100% !important;
+    font-size: 0.88rem !important;
+    color: #9ca3b0 !important;
+    gap: 0 !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    background: #252525 !important;
+    color: #ececf1 !important;
+}
+/* selected nav item */
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+    background: #2a2a2a !important;
+    color: #ececf1 !important;
+}
+/* reduce gap between nav items */
+[data-testid="stSidebar"] [data-testid="stRadio"] > div {
+    gap: 0 !important;
+}
+
+/* ── sidebar divider ── */
+[data-testid="stSidebar"] hr {
+    border-color: #2d2d2d !important;
+    margin: 10px 0 !important;
+}
+
+
+/* ── main chat area ── */
+.chat-wrap {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+/* ── welcome / empty state ── */
+.welcome {
+    text-align: center;
+    padding: 5rem 1rem 2rem;
+}
+.welcome-logo { font-size: 3.5rem; line-height: 1; }
+.welcome-title { font-size: 2rem; font-weight: 700; margin: 0.4rem 0 0.2rem; }
+.welcome-sub { color: #8e8ea0; font-size: 0.9rem; margin-bottom: 2.5rem; }
+
+/* suggestion cards */
+.sugg-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    max-width: 560px;
+    margin: 0 auto;
+}
+.sugg-card {
+    background: #1a1d27;
+    border: 1px solid #2a2d38;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.83rem;
+    color: #c4c7ce;
+    text-align: left;
+}
+.sugg-card b { display: block; color: #ececf1; margin-bottom: 3px; font-size: 0.85rem; }
+
+/* ── confidence bar ── */
+.conf-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.conf-bg { flex: 0 0 100px; height: 4px; background: #e2e8f0; border-radius: 2px; }
+.conf-fill { height: 4px; border-radius: 2px; }
+.conf-lbl { font-size: 0.72rem; font-weight: 600; }
+
+/* ── track / badge chips ── */
+.chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 9px; border-radius: 20px;
+    font-size: 0.71rem; font-weight: 600; margin-right: 4px;
+}
+.chip-rag    { background:#2563eb18; color:#3b82f6; border:1px solid #3b82f644; }
+.chip-db     { background:#7c3aed18; color:#8b5cf6; border:1px solid #7c3aed44; }
+.chip-web    { background:#64748b18; color:#94a3b8; border:1px solid #64748b44; }
+.chip-green  { background:#16a34a18; color:#22c55e; border:1px solid #16a34a44; }
+.chip-amber  { background:#d9770618; color:#f59e0b; border:1px solid #d9770644; }
+.chip-red    { background:#dc262618; color:#ef4444; border:1px solid #dc262644; }
+.chip-gray   { background:#64748b18; color:#94a3b8; border:1px solid #64748b44; }
+
+/* ── source rows ── */
+.src { display:flex; gap:8px; padding:6px 0; font-size:0.84rem; border-bottom:1px solid #f1f5f9; }
+.src:last-child { border:none; }
+
+/* ── doc type pill ── */
+.dpill {
+    display:inline-block; padding:1px 7px; border-radius:4px;
+    font-size:0.67rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.05em; margin-left:6px; vertical-align:middle;
+}
+
+/* ── status dot ── */
+.dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; flex-shrink:0; }
+.d-green { background:#16a34a; }
+.d-red   { background:#dc2626; }
+.d-amber { background:#d97706; }
+.d-gray  { background:#9ca3af; }
+
+/* ── panel header ── */
+.ph { font-size:1.35rem; font-weight:700; margin-bottom:1.25rem; }
+
+/* ── form cards ── */
+.fcard {
+    background:#f8f9fb;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:1.25rem 1.5rem;
+    margin-bottom:1rem;
+}
+
+/* ── list row ── */
+.lrow {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 0; border-bottom:1px solid #f1f5f9;
+}
+.lrow:last-child { border:none; }
+
+/* ── health card ── */
+.hcard {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 14px; border-radius:8px;
+    background:#f8f9fb; border:1px solid #e9ecef;
+    margin-bottom:8px; font-size:0.88rem;
+}
+.hcard-name { font-weight:600; }
+.hcard-det  { color:#6c757d; font-size:0.78rem; }
+
+/* ── audit table ── */
+.atbl { width:100%; border-collapse:collapse; font-size:0.83rem; }
+.atbl th { text-align:left; padding:6px 10px; color:#94a3b8; font-weight:600;
+           border-bottom:1px solid #e2e8f0; font-size:0.75rem; text-transform:uppercase; }
+.atbl td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+.atbl tr:last-child td { border:none; }
+.atbl tr:hover td { background:#f8f9fb; }
+.ts-cell { color:#94a3b8; font-family:monospace; white-space:nowrap; }
+.q-cell  { font-family:monospace; word-break:break-all; color:#374151; }
+
+/* ── governance table ── */
+.gtbl { width:100%; border-collapse:collapse; font-size:0.85rem; }
+.gtbl th { text-align:left; padding:8px 12px; color:#6b7280;
+           border-bottom:1px solid #e5e7eb; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.gtbl td { padding:8px 12px; border-bottom:1px solid #f3f4f6; }
+.gtbl tr:hover td { background:#fafafa; }
+.gtbl tr:last-child td { border:none; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Server-side session persistence (survives page refresh) ---
-@st.cache_resource
-def _get_session_store():
-    return {}
 
-_session_store = _get_session_store()
+# ─────────────────────────────────────────────────────────────────────────────
+# Session / API helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Initialize LLM Manager
-llm_manager = LLMManager()
-embedding_manager = EmbeddingManager()
+def _token() -> Optional[str]:
+    return st.session_state.get("token")
 
-# --- Session state defaults ---
-_DEFAULTS = {
-    "token": None,
-    "username": None,
-    "role": None,
-    "org_id": None,
-    "messages": [],
-    "uploaded_files": [],
-    "llm_provider": None,
-    "llm_model": None,
-    "llm_models_list": [],
-    "llm_connected": False,
-    "embedding_provider": None,
-    "embedding_model": None,
-    "embedding_connected": False,
-    "conversation_id": None,   # active conversation (persisted in DB)
-    "active_db_connections": [],  # list of {conn_id, tables}
+def _user() -> Optional[dict]:
+    return st.session_state.get("user")
+
+def _is_admin() -> bool:
+    u = _user()
+    return u is not None and u.get("role") == "admin"
+
+def _headers() -> dict:
+    t = _token()
+    return {"Authorization": f"Bearer {t}"} if t else {}
+
+def _api(method: str, path: str, **kwargs) -> requests.Response:
+    try:
+        return getattr(requests, method)(f"{API_BASE}{path}", headers=_headers(), timeout=60, **kwargs)
+    except requests.exceptions.ConnectionError:
+        class _Fake:
+            status_code = 503
+            def json(self): return {"detail": "Cannot connect to API"}
+            text = "Cannot connect to API"
+        return _Fake()
+
+def _show_error(resp):
+    try:
+        detail = resp.json().get("detail", resp.text)
+    except Exception:
+        detail = resp.text
+    st.error(f"**{resp.status_code}** — {detail}")
+
+def _page() -> str:
+    return st.session_state.get("page", "Chat")
+
+def _set_page(p: str):
+    st.session_state["page"] = p
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Building blocks
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DOC_COLORS = {
+    "pdf": ("#ef4444","#fff"), "docx": ("#3b82f6","#fff"), "doc": ("#3b82f6","#fff"),
+    "xlsx": ("#22c55e","#fff"), "xls": ("#22c55e","#fff"), "csv": ("#22c55e","#fff"),
+    "txt": ("#94a3b8","#fff"), "md": ("#a78bfa","#fff"), "html": ("#f97316","#fff"),
+    "json": ("#06b6d4","#fff"), "py": ("#facc15","#1e293b"), "ipynb": ("#f97316","#fff"),
+    "tabular": ("#22c55e","#fff"), "code": ("#facc15","#1e293b"),
 }
-for _key, _val in _DEFAULTS.items():
-    if _key not in st.session_state:
-        st.session_state[_key] = copy.deepcopy(_val)
+
+def _dpill(doc_type: str) -> str:
+    bg, fg = _DOC_COLORS.get(doc_type.lower(), ("#64748b","#fff"))
+    return f'<span class="dpill" style="background:{bg};color:{fg};">{doc_type.upper()}</span>'
+
+def _conf_html(c: float) -> str:
+    if c >= 0.75:
+        color, label = "#16a34a", "High"
+    elif c >= 0.50:
+        color, label = "#d97706", "Medium"
+    else:
+        color, label = "#dc2626", "Low"
+    pct = int(c * 100)
+    return (
+        f'<div class="conf-wrap">'
+        f'<div class="conf-bg"><div class="conf-fill" style="width:{pct}%;background:{color};"></div></div>'
+        f'<span class="conf-lbl" style="color:{color};">{label} · {pct}%</span>'
+        f'</div>'
+    )
+
+def _tracks_html(tracks: list) -> str:
+    _map = {"rag": ("📄 RAG","chip-rag"), "db": ("🗄️ DB","chip-db"), "web": ("🌐 Web","chip-web")}
+    return "".join(
+        f'<span class="chip {cls}">{lbl}</span>'
+        for t in tracks for lbl, cls in [_map.get(t.lower(), (t,"chip-gray"))]
+    )
+
+def _sources_html(sources: list) -> str:
+    rows = []
+    for s in sources:
+        if not isinstance(s, dict):
+            continue
+        if s.get("url"):
+            rows.append(
+                f'<div class="src"><span>🌐</span>'
+                f'<a href="{s["url"]}" target="_blank" style="color:#3b82f6;">'
+                f'{s.get("title", s["url"])[:80]}</a></div>'
+            )
+        elif s.get("filename"):
+            pg = f" · p.{s['page']}" if s.get("page") else ""
+            rows.append(f'<div class="src"><span>📄</span><span><b>{s["filename"]}</b>{pg}</span></div>')
+        elif s.get("tables_used"):
+            tbls = ", ".join(s["tables_used"])
+            rows.append(f'<div class="src"><span>🗄️</span><span>Tables: <code>{tbls}</code>'
+                        + (f' · {s["row_count"]} rows' if s.get("row_count") else "") + '</span></div>')
+    return "\n".join(rows)
+
+def _gov_chip(state: str) -> str:
+    _map = {"allowed": ("chip-green","✓ Allowed"), "anonymize": ("chip-amber","~ Anonymize"), "block": ("chip-red","✕ Block")}
+    cls, lbl = _map.get(state, ("chip-gray", state))
+    return f'<span class="chip {cls}">{lbl}</span>'
 
 
-# --- Session persistence helpers ---
-def _restore_session():
-    """Restore auth session from server-side store on page refresh."""
-    if st.session_state.token is not None:
-        return  # Already logged in this session
+# ─────────────────────────────────────────────────────────────────────────────
+# Login
+# ─────────────────────────────────────────────────────────────────────────────
 
-    sid = st.query_params.get("sid")
-    if not sid or sid not in _session_store:
-        return
+def _login_page():
+    _, col, _ = st.columns([1.4, 1.2, 1.4])
+    with col:
+        st.markdown("""
+        <div style="text-align:center;padding:3rem 0 1.5rem;">
+          <div style="font-size:3rem;">⚡</div>
+          <div style="font-size:2rem;font-weight:800;margin:4px 0;">RAPID</div>
+          <div style="color:#8e8ea0;font-size:0.85rem;margin-bottom:1.8rem;">
+            RAG Application for Private Instant Deployment<br>
+            The LLM never sees your raw data
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    data = _session_store[sid]
-    # Verify the stored token is still valid
+        tab_in, tab_up = st.tabs(["Sign in", "Create account"])
+
+        with tab_in:
+            with st.form("lf"):
+                st.text_input("Username", key="li_u", placeholder="username")
+                st.text_input("Password", type="password", key="li_p", placeholder="••••••••")
+                ok = st.form_submit_button("Sign in →", use_container_width=True, type="primary")
+            if ok:
+                _do_login(st.session_state.li_u, st.session_state.li_p)
+
+        with tab_up:
+            with st.form("rf"):
+                st.text_input("Username", key="ru_u")
+                st.text_input("Password", type="password", key="ru_p")
+                st.text_input("Department", key="ru_d", placeholder="engineering / finance / …")
+                st.selectbox("Role", ["viewer", "manager", "admin"], key="ru_r")
+                ok = st.form_submit_button("Create account", use_container_width=True, type="primary")
+            if ok:
+                _do_register(st.session_state.ru_u, st.session_state.ru_p,
+                             st.session_state.ru_d, st.session_state.ru_r)
+
+
+def _do_login(username: str, password: str):
     try:
-        resp = requests.get(
-            f"{API_BASE}/me",
-            headers={"Authorization": f"Bearer {data['token']}"},
-            timeout=5,
-        )
-        if resp.status_code == 200:
-            st.session_state.token = data["token"]
-            st.session_state.username = data["username"]
-            st.session_state.role = data.get("role")
-            st.session_state.org_id = data.get("org_id")
-            st.session_state.messages = copy.deepcopy(data.get("messages", []))
-            st.session_state.uploaded_files = list(data.get("uploaded_files", []))
-            st.session_state.conversation_id = data.get("conversation_id")
-            st.session_state.active_db_connections = list(data.get("active_db_connections", []))
-            return
-    except Exception:
-        pass
-
-    # Token invalid or server unreachable — clean up
-    del _session_store[sid]
-    st.query_params.clear()
-
-
-def _save_session():
-    """Persist current session to the server-side store."""
-    if not st.session_state.token:
-        return
-    sid = st.query_params.get("sid")
-    if not sid:
-        sid = str(uuid.uuid4())
-        st.query_params["sid"] = sid
-    _session_store[sid] = {
-        "token": st.session_state.token,
-        "username": st.session_state.username,
-        "role": st.session_state.role,
-        "org_id": st.session_state.org_id,
-        "messages": copy.deepcopy(st.session_state.messages),
-        "uploaded_files": list(st.session_state.uploaded_files),
-        "conversation_id": st.session_state.conversation_id,
-        "active_db_connections": list(st.session_state.active_db_connections),
-    }
-
-
-def _clear_session():
-    """Logout: clear session from store and reset state."""
-    sid = st.query_params.get("sid")
-    if sid and sid in _session_store:
-        del _session_store[sid]
-    st.query_params.clear()
-    for key, val in _DEFAULTS.items():
-        st.session_state[key] = copy.deepcopy(val)
-
-
-# Restore session on page load
-_restore_session()
-
-
-# --- Auth helpers ---
-def _authenticate(username, password):
-    try:
-        resp = requests.post(
-            f"{API_BASE}/login",
-            json={"username": username, "password": password},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            st.session_state.token = data["access_token"]
-            st.session_state.username = data["user"]["username"]
-            st.session_state.role = data["user"].get("role")
-            st.session_state.org_id = data["user"].get("org_id")
-            st.session_state.active_db_connections = []
-
-            # Try to resume latest conversation or create a new one
-            auth_headers = {"Authorization": f"Bearer {data['access_token']}"}
-            try:
-                conv_resp = requests.get(
-                    f"{API_BASE}/api/conversations",
-                    headers=auth_headers,
-                    timeout=10,
-                )
-                if conv_resp.status_code == 200:
-                    convs = conv_resp.json().get("conversations", [])
-                    if convs:
-                        # Resume most recent conversation
-                        conv_id = convs[0]["conversation_id"]
-                        st.session_state.conversation_id = conv_id
-                        # Load history from API
-                        msg_resp = requests.get(
-                            f"{API_BASE}/api/conversations/{conv_id}/messages",
-                            headers=auth_headers,
-                            timeout=10,
-                        )
-                        if msg_resp.status_code == 200:
-                            api_msgs = msg_resp.json().get("messages", [])
-                            st.session_state.messages = [
-                                {"role": m["role"], "content": m["content"]}
-                                for m in api_msgs
-                            ]
-                        else:
-                            st.session_state.messages = []
-                    else:
-                        raise ValueError("no conversations")
-            except Exception:
-                # Create a fresh conversation
-                try:
-                    new_conv = requests.post(
-                        f"{API_BASE}/api/conversations",
-                        json={"title": "Chat"},
-                        headers=auth_headers,
-                        timeout=10,
-                    )
-                    if new_conv.status_code == 200:
-                        st.session_state.conversation_id = new_conv.json()["conversation_id"]
-                except Exception:
-                    st.session_state.conversation_id = None
-                st.session_state.messages = [
-                    {
-                        "role": "assistant",
-                        "content": f"Welcome back, **{st.session_state.username}**! Upload a document or connect a database using the sidebar, then ask me anything.",
-                    }
-                ]
-
-            _save_session()
-            return True, None
+        r = requests.post(f"{API_BASE}/auth/login",
+                          json={"username": username, "password": password}, timeout=10)
+        if r.status_code == 200:
+            tok = r.json()["token"]
+            st.session_state["token"] = tok
+            me = requests.get(f"{API_BASE}/me",
+                              headers={"Authorization": f"Bearer {tok}"}, timeout=10).json()
+            st.session_state["user"] = me
+            st.session_state["page"] = "Chat"
+            st.rerun()
         else:
-            detail = resp.json().get("detail", "Invalid credentials")
-            return False, detail
-    except requests.exceptions.ConnectionError:
-        return False, "Cannot connect to the API server. Is it running?"
+            _show_error(r)
     except Exception as e:
-        return False, f"Connection error: {e}"
+        st.error(f"Cannot reach API: {e}")
 
 
-def _register(username, password):
+def _do_register(username, password, dept, role):
     try:
-        resp = requests.post(
-            f"{API_BASE}/register",
-            json={"username": username, "password": password},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            return True, None
+        r = requests.post(f"{API_BASE}/auth/register",
+                          json={"username": username, "password": password,
+                                "department": dept, "role": role}, timeout=10)
+        if r.status_code == 201:
+            st.success("Account created — sign in to continue.")
         else:
-            detail = resp.json().get("detail", "Registration failed")
-            return False, detail
-    except requests.exceptions.ConnectionError:
-        return False, "Cannot connect to the API server. Is it running?"
+            _show_error(r)
     except Exception as e:
-        return False, f"Connection error: {e}"
+        st.error(f"Cannot reach API: {e}")
 
 
-def _configure_backend_llm(provider, model, api_key=None, base_url=None):
-    """Tell the backend which provider+model to use."""
-    if not st.session_state.token:
-        return
-    try:
-        payload = {"provider": provider, "model": model}
-        if api_key:
-            payload["api_key"] = api_key
-        if base_url:
-            payload["base_url"] = base_url
-        requests.post(
-            f"{API_BASE}/configure-llm",
-            json=payload,
-            headers={"Authorization": f"Bearer {st.session_state.token}"},
-            timeout=10,
+# ─────────────────────────────────────────────────────────────────────────────
+# Sidebar
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sidebar():
+    user = _user() or {}
+
+    with st.sidebar:
+        # Logo
+        st.markdown(
+            '<div style="padding:18px 14px 8px;">'
+            '<span style="font-size:1.4rem;font-weight:800;color:#ececf1;">⚡ RAPID</span>'
+            '</div>',
+            unsafe_allow_html=True,
         )
-    except Exception:
-        pass  # Non-critical; backend will fall back to auto-detection
 
-
-# ===================== SIDEBAR =====================
-with st.sidebar:
-    if st.session_state.token:
-        st.markdown(f"**Logged in as:** {st.session_state.username}")
-        if st.button("Logout"):
-            _clear_session()
+        # New chat button
+        if st.button("✏️  New chat", key="new_chat", use_container_width=True):
+            st.session_state["messages"] = []
+            st.session_state["page"] = "Chat"
             st.rerun()
 
-        st.divider()
-        page = "Chat"
-        if st.session_state.role == "admin":
-            page = st.radio("Menu", ["Chat", "Admin"], key="menu_select")
-        else:
-            page = st.radio("Menu", ["Chat"], key="menu_select")
-        st.session_state.page = page
+        st.markdown("<hr>", unsafe_allow_html=True)
 
-        # --- File Upload ---
-        st.subheader("Upload Document")
-        uploaded_file = st.file_uploader(
-            "Choose a file",
-            type=["pdf", "docx", "txt", "csv", "xlsx", "xls", "json", "xml", "parquet", "md", "html"],
-            key="file_uploader",
+        # ── Navigation via radio (reliable, styled via CSS) ──
+        _PAGES = ["💬  Chat", "📄  Documents", "🗄️  Database", "🔒  Governance", "⚙️  Settings", "📋  Audit"]
+        _LABELS = ["Chat", "Documents", "Database", "Governance", "Settings", "Audit"]
+
+        cur_label = st.session_state.get("page", "Chat")
+        cur_idx = _LABELS.index(cur_label) if cur_label in _LABELS else 0
+
+        chosen = st.radio(
+            "Navigation",
+            _PAGES,
+            index=cur_idx,
+            key="nav_radio",
+            label_visibility="collapsed",
         )
-        if uploaded_file and uploaded_file.name not in st.session_state.uploaded_files:
-            with st.spinner("Uploading and analyzing..."):
-                files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-                headers = {"Authorization": f"Bearer {st.session_state.token}"}
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/upload", files=files, headers=headers, timeout=120
+        # Sync page from radio
+        chosen_label = _LABELS[_PAGES.index(chosen)]
+        if chosen_label != st.session_state.get("page"):
+            st.session_state["page"] = chosen_label
+            st.rerun()
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+
+        # User info
+        role  = user.get("role", "")
+        dept  = user.get("department", "")
+        uname = user.get("username", "")
+        role_color = {"admin": "#ef4444", "manager": "#f59e0b", "viewer": "#8e8ea0"}.get(role, "#8e8ea0")
+        st.markdown(
+            f'<div style="padding:4px 14px 10px;">'
+            f'<div style="font-size:0.88rem;color:#c4c7ce;font-weight:600;">{uname}</div>'
+            f'<div style="font-size:0.76rem;color:#6b6b7a;">{dept} · '
+            f'<span style="color:{role_color};">{role}</span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Sign out", key="signout", use_container_width=True):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SUGGESTIONS = [
+    ("Summarize documents", "What are the key insights from my uploaded documents?"),
+    ("Query a database", "Show me a summary of the data in the connected database"),
+    ("Compare sources", "What does the database say vs what the documents say about this topic?"),
+    ("Search the web", "What are the latest developments in [topic]?"),
+]
+
+
+def _chat_panel():
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = []
+    if "recent_qs" not in st.session_state:
+        st.session_state["recent_qs"] = []
+
+    msgs = st.session_state["messages"]
+
+    # DB connection (top, compact)
+    conn_id = None
+    conn_resp = _api("get", "/db/connections")
+    if conn_resp.status_code == 200:
+        conns = conn_resp.json().get("connections", [])
+        if conns:
+            with st.expander("🗄️ Database connection", expanded=False):
+                sel = st.selectbox("", ["— none —"] + conns, key="chat_conn", label_visibility="collapsed")
+                conn_id = None if sel == "— none —" else sel
+
+    # Empty state
+    if not msgs:
+        st.markdown("""
+        <div class="welcome">
+          <div class="welcome-logo">⚡</div>
+          <div class="welcome-title">What can I help you with?</div>
+          <div class="welcome-sub">Ask about your documents, databases, or anything else.</div>
+        </div>
+        <div class="sugg-grid">
+          <div class="sugg-card"><b>Summarize documents</b>What are the key insights from my uploaded documents?</div>
+          <div class="sugg-card"><b>Query a database</b>Show me a summary of the connected database</div>
+          <div class="sugg-card"><b>Compare sources</b>What do the documents say about this topic?</div>
+          <div class="sugg-card"><b>Search the web</b>What are the latest developments in…</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Message history
+    for msg in msgs:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg["role"] == "assistant":
+                extra_html = ""
+                if msg.get("tracks"):
+                    extra_html += _tracks_html(msg["tracks"])
+                if extra_html:
+                    st.markdown(f'<div style="margin-top:6px;">{extra_html}</div>', unsafe_allow_html=True)
+                if msg.get("confidence") is not None:
+                    st.markdown(_conf_html(msg["confidence"]), unsafe_allow_html=True)
+                if msg.get("sources"):
+                    src = _sources_html(msg["sources"])
+                    if src:
+                        with st.expander(f"Sources ({len(msg['sources'])})", expanded=False):
+                            st.markdown(src, unsafe_allow_html=True)
+
+    # Input
+    if question := st.chat_input("Message RAPID…"):
+        st.session_state["messages"].append({"role": "user", "content": question})
+        st.session_state["recent_qs"].append(question)
+        if len(st.session_state["recent_qs"]) > 20:
+            st.session_state["recent_qs"] = st.session_state["recent_qs"][-20:]
+
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        with st.chat_message("assistant"):
+            with st.spinner(""):
+                resp = _api("post", "/query", json={"question": question, "conn_id": conn_id})
+
+            if resp.status_code == 200:
+                data       = resp.json()
+                answer     = data["answer"]
+                confidence = data.get("confidence", 0.0)
+                sources    = data.get("sources", [])
+                tracks     = data.get("tracks_used", [])
+
+                st.markdown(answer)
+
+                if tracks:
+                    st.markdown(
+                        f'<div style="margin-top:6px;">{_tracks_html(tracks)}</div>',
+                        unsafe_allow_html=True,
                     )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        detected = data.get("detected", {})
-                        st.session_state.uploaded_files.append(uploaded_file.name)
+                st.markdown(_conf_html(confidence), unsafe_allow_html=True)
 
-                        # Build a friendly detection summary for the chat
-                        pipeline = detected.get("pipeline", "rag")
-                        doc_type = detected.get("type", "document")
-                        doc_subtype = detected.get("subtype", "")
-                        confidence = detected.get("confidence", 0.0)
-                        stats = detected.get("stats", {})
-                        reason = detected.get("reason", "")
+                if sources:
+                    src = _sources_html(sources)
+                    if src:
+                        with st.expander(f"Sources ({len(sources)})", expanded=False):
+                            st.markdown(src, unsafe_allow_html=True)
 
-                        # Stats line
-                        stats_parts = []
-                        if stats.get("rows"):
-                            stats_parts.append(f"{stats['rows']:,} rows")
-                        if stats.get("cols"):
-                            stats_parts.append(f"{stats['cols']} columns")
-                        if stats.get("word_count"):
-                            stats_parts.append(f"{stats['word_count']:,} words")
-                        if stats.get("pages"):
-                            stats_parts.append(f"{stats['pages']} pages")
-                        if stats.get("sheet_count", 0) > 1:
-                            stats_parts.append(f"{stats['sheet_count']} sheets")
-                        stats_line = " · ".join(stats_parts)
+                st.session_state["messages"].append({
+                    "role": "assistant", "content": answer,
+                    "confidence": confidence, "sources": sources, "tracks": tracks,
+                })
+            else:
+                _show_error(resp)
 
-                        # Pipeline description
-                        if pipeline == "sql":
-                            pipeline_desc = "SQL pipeline active — ask questions in natural language"
-                        else:
-                            cfg = data.get("config_applied", {})
-                            cs = cfg.get("chunk_size", "?")
-                            sm = cfg.get("search_mode", "hybrid")
-                            pipeline_desc = f"RAG pipeline · {sm} search · chunk_size={cs}"
 
-                        chat_msg = (
-                            f"**{uploaded_file.name}** uploaded\n\n"
-                            f"**Detected:** {doc_type.replace('_', ' ').title()}"
-                            + (f" · {doc_subtype.replace('_', ' ').title()}" if doc_subtype else "")
-                            + f" ({confidence * 100:.0f}% confidence)\n"
-                            + (f"**Stats:** {stats_line}\n" if stats_line else "")
-                            + f"**Pipeline:** {pipeline_desc}"
-                        )
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": chat_msg}
-                        )
-                        _save_session()
-                        st.rerun()
-                    elif resp.status_code == 401:
-                        st.error("Session expired. Please login again.")
-                        _clear_session()
-                        st.rerun()
-                    else:
-                        detail = resp.json().get("detail", "Upload failed")
-                        st.error(detail)
-                except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to the API server. Is it running?")
-                except Exception as e:
-                    st.error(f"Upload error: {e}")
+# ─────────────────────────────────────────────────────────────────────────────
+# Documents
+# ─────────────────────────────────────────────────────────────────────────────
 
-        if st.session_state.uploaded_files:
-            st.markdown("**Uploaded files:**")
-            for fname in st.session_state.uploaded_files:
-                st.markdown(f"- {fname}")
+def _documents_panel():
+    st.markdown('<div class="ph">📄 Documents</div>', unsafe_allow_html=True)
 
-        st.divider()
-
-        # --- LLM Configuration ---
-        st.subheader("LLM Configuration")
-
-        if st.session_state.llm_connected and st.session_state.llm_provider:
-            st.success(f"Active: {st.session_state.llm_provider} / {st.session_state.llm_model}")
-
-        provider_type = st.radio("Provider Type", ["Cloud", "Local"], key="provider_type")
-
-        if provider_type == "Cloud":
-            cloud_providers = ["openai", "anthropic", "openrouter"]
-            selected = st.selectbox("Provider", cloud_providers, key="cloud_prov")
-            api_key = st.text_input(f"{selected.upper()} API Key", type="password", key="api_key")
-            if st.button("Connect", key="connect_cloud"):
-                if api_key:
-                    try:
-                        llm_manager.update_provider_config(selected, {"api_key": api_key})
-                        models = llm_manager.get_provider_models(selected)
-                        if models:
-                            st.session_state.llm_provider = selected
-                            st.session_state.llm_models_list = models
-                            st.session_state.llm_model = models[0]
-                            st.session_state.llm_connected = True
-                            # Configure backend
-                            _configure_backend_llm(selected, models[0], api_key=api_key)
-                            st.rerun()
-                        else:
-                            st.error("Could not retrieve models. Check your API key.")
-                    except Exception as e:
-                        st.error(f"Connection failed: {e}")
-                else:
-                    st.warning("Please enter an API key")
-        else:
-            local_providers = ["ollama", "lmstudio"]
-            selected = st.selectbox("Provider", local_providers, key="local_prov")
-            default_port = 11434 if selected == "ollama" else 1234
-            base_url = st.text_input(
-                "Base URL",
-                value=f"http://localhost:{default_port}",
-                key="base_url",
-            )
-            if st.button("Connect", key="connect_local"):
-                try:
-                    llm_manager.update_provider_config(selected, {"base_url": base_url})
-                    models = llm_manager.get_provider_models(selected)
-                    if models:
-                        st.session_state.llm_provider = selected
-                        st.session_state.llm_models_list = models
-                        st.session_state.llm_model = models[0]
-                        st.session_state.llm_connected = True
-                        # Configure backend
-                        _configure_backend_llm(selected, models[0], base_url=base_url)
-                        st.rerun()
-                    else:
-                        st.error(f"No models found. Is {selected} running?")
-                except Exception as e:
-                    st.error(f"Connection failed: {e}")
-
-        # --- Model selector (shown after connecting) ---
-        if st.session_state.llm_connected and st.session_state.llm_models_list:
-            st.divider()
-            st.subheader("Select Model")
-            current_idx = 0
-            if st.session_state.llm_model in st.session_state.llm_models_list:
-                current_idx = st.session_state.llm_models_list.index(st.session_state.llm_model)
-            chosen_model = st.selectbox(
-                "Model",
-                st.session_state.llm_models_list,
-                index=current_idx,
-                key="model_selector",
-            )
-            if chosen_model != st.session_state.llm_model:
-                st.session_state.llm_model = chosen_model
-                _configure_backend_llm(st.session_state.llm_provider, chosen_model)
+    uploaded = st.file_uploader(
+        "Upload a document",
+        type=["pdf","docx","txt","md","html","csv","xlsx","xls","json","py","ipynb"],
+        key="doc_upload",
+        label_visibility="collapsed",
+    )
+    if uploaded:
+        c1, c2 = st.columns([4, 1])
+        c1.caption(f"**{uploaded.name}** · {uploaded.size / 1024:.1f} KB")
+        if c2.button("Upload & Index", key="do_upload", type="primary"):
+            with st.spinner("Indexing…"):
+                resp = _api("post", "/documents/upload",
+                            files={"file": (uploaded.name, uploaded.getvalue())})
+            if resp.status_code == 201:
+                d = resp.json()
+                st.success(f"✓  **{d['filename']}** — {d['chunks']} chunks indexed")
                 st.rerun()
-
-        st.divider()
-
-        # --- Embedding Configuration ---
-        st.subheader("Embedding Configuration")
-
-        if st.session_state.embedding_connected and st.session_state.embedding_provider:
-            st.success(f"Active: {st.session_state.embedding_provider} / {st.session_state.embedding_model}")
-
-        emb_type = st.radio("Embedding Type", ["Local", "Cloud"], key="emb_type")
-
-        if emb_type == "Local":
-            local_emb_providers = ["sentence-transformers", "ollama"]
-            emb_selected = st.selectbox("Provider", local_emb_providers, key="local_emb_prov")
-
-            if emb_selected == "sentence-transformers":
-                st_models = embedding_manager.get_provider_models("sentence-transformers")
-                emb_model = st.selectbox(
-                    "Model",
-                    st_models,
-                    index=0,
-                    key="st_emb_model",
-                )
-                if st.button("Activate", key="activate_st_emb"):
-                    try:
-                        embedding_manager.update_provider("sentence-transformers", model=emb_model)
-                        embedding_manager.set_active("sentence-transformers", emb_model)
-                        st.session_state.embedding_provider = "sentence-transformers"
-                        st.session_state.embedding_model = emb_model
-                        st.session_state.embedding_connected = True
-                        # Notify backend
-                        if st.session_state.token:
-                            try:
-                                requests.post(
-                                    f"{API_BASE}/configure-embedding",
-                                    json={"provider": "sentence-transformers", "model": emb_model},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                            except Exception:
-                                pass
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to load model: {e}")
-
-            elif emb_selected == "ollama":
-                ollama_url = st.text_input(
-                    "Ollama URL",
-                    value="http://localhost:11434",
-                    key="ollama_emb_url",
-                )
-                ollama_emb_models = embedding_manager.get_provider_models("ollama")
-                emb_model = st.selectbox(
-                    "Model",
-                    ollama_emb_models if ollama_emb_models else ["nomic-embed-text"],
-                    key="ollama_emb_model",
-                )
-                if st.button("Activate", key="activate_ollama_emb"):
-                    try:
-                        embedding_manager.update_provider("ollama", base_url=ollama_url, model=emb_model)
-                        embedding_manager.set_active("ollama", emb_model)
-                        st.session_state.embedding_provider = "ollama"
-                        st.session_state.embedding_model = emb_model
-                        st.session_state.embedding_connected = True
-                        if st.session_state.token:
-                            try:
-                                requests.post(
-                                    f"{API_BASE}/configure-embedding",
-                                    json={"provider": "ollama", "model": emb_model, "base_url": ollama_url},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                            except Exception:
-                                pass
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed: {e}")
-
-        else:  # Cloud
-            cloud_emb_providers = ["openai", "huggingface"]
-            emb_selected = st.selectbox("Provider", cloud_emb_providers, key="cloud_emb_prov")
-
-            emb_api_key = st.text_input(f"{emb_selected.upper()} API Key", type="password", key="emb_api_key")
-
-            cloud_models = embedding_manager.get_provider_models(emb_selected)
-            emb_model = st.selectbox(
-                "Model",
-                cloud_models if cloud_models else ["default"],
-                key="cloud_emb_model",
-            )
-
-            if st.button("Activate", key="activate_cloud_emb"):
-                if emb_api_key:
-                    try:
-                        embedding_manager.update_provider(emb_selected, api_key=emb_api_key, model=emb_model)
-                        embedding_manager.set_active(emb_selected, emb_model)
-                        st.session_state.embedding_provider = emb_selected
-                        st.session_state.embedding_model = emb_model
-                        st.session_state.embedding_connected = True
-                        if st.session_state.token:
-                            try:
-                                requests.post(
-                                    f"{API_BASE}/configure-embedding",
-                                    json={"provider": emb_selected, "model": emb_model, "api_key": emb_api_key},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                            except Exception:
-                                pass
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed: {e}")
-                else:
-                    st.warning("Please enter an API key")
-
-        st.caption("⚠️ Changing embedding provider requires re-uploading documents.")
-
-        st.divider()
-
-        # --- Database Connection ---
-        st.subheader("🗄️ Database Connection")
-        st.caption("Connect a database so RAPID can answer questions from your live data.")
-
-        # Show active connections
-        if st.session_state.active_db_connections:
-            for conn in st.session_state.active_db_connections:
-                conn_id = conn.get("conn_id", "")
-                tables = conn.get("tables", [])
-                st.success(f"✅ {conn_id}")
-                if tables:
-                    st.caption(f"Tables: {', '.join(tables[:5])}{'...' if len(tables) > 5 else ''}")
-                if st.button("Disconnect", key=f"disc_db_{conn_id}"):
-                    try:
-                        requests.delete(
-                            f"{API_BASE}/close-connection/{conn_id}",
-                            headers={"Authorization": f"Bearer {st.session_state.token}"},
-                            timeout=10,
-                        )
-                        st.session_state.active_db_connections = [
-                            c for c in st.session_state.active_db_connections if c.get("conn_id") != conn_id
-                        ]
-                        _save_session()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-        with st.expander("➕ Connect Database"):
-            db_type = st.selectbox(
-                "Database Type",
-                ["postgres", "mysql"],
-                format_func=lambda x: {
-                    "postgres": "🐘 PostgreSQL",
-                    "mysql": "🐬 MySQL",
-                }.get(x, x),
-                key="db_type_select",
-            )
-
-            if db_type in ("postgres", "mysql"):
-                db_host = st.text_input("Host", placeholder="localhost", key="db_host")
-                db_port = st.number_input("Port", value=5432 if db_type == "postgres" else 3306, key="db_port")
-                db_name = st.text_input("Database name", key="db_name")
-                db_user = st.text_input("Username", key="db_user")
-                db_pass = st.text_input("Password", type="password", key="db_pass")
-                if db_type == "postgres":
-                    db_ssl = st.selectbox("SSL Mode", ["prefer", "require", "disable"], key="db_ssl")
-
-                if st.button("Connect", key="connect_db_btn"):
-                    if all([db_host, db_name, db_user]):
-                        payload = {
-                            "db_type": db_type,
-                            "host": db_host,
-                            "port": int(db_port),
-                            "database": db_name,
-                            "username": db_user,
-                            "password": db_pass,
-                        }
-                        if db_type == "postgres":
-                            payload["ssl_mode"] = db_ssl
-                        try:
-                            r = requests.post(
-                                f"{API_BASE}/connect-database",
-                                json=payload,
-                                headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                timeout=15,
-                            )
-                            if r.status_code == 200:
-                                conn_id = r.json()["conn_id"]
-                                # Fetch tables
-                                t_resp = requests.get(
-                                    f"{API_BASE}/list-tables/{conn_id}",
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                                tables = t_resp.json().get("tables", []) if t_resp.status_code == 200 else []
-                                st.session_state.active_db_connections.append({"conn_id": conn_id, "tables": tables})
-                                _save_session()
-                                st.success(f"Connected: {conn_id}")
-                                st.rerun()
-                            else:
-                                st.error(r.json().get("detail", "Connection failed"))
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-                    else:
-                        st.warning("Fill in host, database, and username")
-
-        st.divider()
-
-        # --- RAG Configuration ---
-        st.subheader("RAG Configuration")
-
-        rag_config_mode = st.radio("Configuration Mode", ["Use Template", "Custom Configuration"], key="rag_config_mode")
-
-        if rag_config_mode == "Use Template":
-            template_info = {
-                "fast_search": ("⚡ Fast Search", "Quick FAQ lookups, real-time chat", "Less context, faster responses"),
-                "balanced": ("⚖️ Balanced", "General-purpose queries", "Optimal speed/quality"),
-                "deep_analysis": ("🔬 Deep Analysis", "Research, detailed analysis", "Slower but comprehensive"),
-                "cost_optimized": ("💰 Cost Optimized", "Cost-sensitive deployments", "Minimal API calls"),
-                "high_accuracy": ("🎯 High Accuracy", "Mission-critical accuracy", "Higher cost, max quality"),
-            }
-            template_keys = list(template_info.keys())
-            template_labels = [template_info[k][0] for k in template_keys]
-
-            selected_idx = st.selectbox(
-                "Select Template",
-                range(len(template_keys)),
-                format_func=lambda i: template_labels[i],
-                index=1,  # Default: balanced
-                key="rag_template_select",
-            )
-            selected_template = template_keys[selected_idx]
-            info = template_info[selected_template]
-            st.caption(f"📝 {info[1]}")
-            st.caption(f"⚖️ Trade-off: {info[2]}")
-
-            if st.button("Apply Template", key="apply_rag_template"):
-                if st.session_state.token:
-                    try:
-                        resp = requests.post(
-                            f"{API_BASE}/rag/config/apply-template",
-                            json={"template_name": selected_template},
-                            headers={"Authorization": f"Bearer {st.session_state.token}"},
-                            timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            st.success(f"Template '{info[0]}' applied!")
-                            st.rerun()
-                        else:
-                            st.error(f"Failed: {resp.text}")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Please log in first")
-
-        else:  # Custom Configuration
-            col1, col2 = st.columns(2)
-            with col1:
-                chunk_size = st.slider("Chunk Size (tokens)", 128, 2048, 512, step=128, key="rag_chunk")
-                top_k = st.slider("Top-K Documents", 1, 20, 5, key="rag_topk")
-            with col2:
-                overlap = st.slider("Overlap (tokens)", 0, 256, 64, step=16, key="rag_overlap")
-                embedding_model = st.selectbox(
-                    "Embedding Model",
-                    ["text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large"],
-                    key="rag_emb_model",
-                )
-
-            config_name = st.text_input("Config Name", value="My Custom Config", key="rag_config_name")
-
-            if st.button("Save Custom Config", key="save_custom_rag"):
-                if st.session_state.token:
-                    try:
-                        resp = requests.post(
-                            f"{API_BASE}/rag/config/custom",
-                            json={
-                                "config_name": config_name,
-                                "chunk_size": chunk_size,
-                                "overlap_size": overlap,
-                                "top_k": top_k,
-                                "embedding_model": embedding_model,
-                            },
-                            headers={"Authorization": f"Bearer {st.session_state.token}"},
-                            timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            st.success("Custom configuration saved!")
-                            st.rerun()
-                        else:
-                            detail = resp.json().get("detail", resp.text)
-                            st.error(f"Failed: {detail}")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Please log in first")
-
-        # Show active config
-        if st.session_state.token:
-            try:
-                resp = requests.get(
-                    f"{API_BASE}/rag/config",
-                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                    timeout=5,
-                )
-                if resp.status_code == 200:
-                    cfg = resp.json().get("config", {})
-                    with st.expander("📊 Active Configuration"):
-                        st.markdown(f"**{cfg.get('config_name', 'Balanced')}** ({cfg.get('config_type', 'template')})")
-                        st.markdown(f"Chunk: {cfg.get('chunk_size', 512)} · Overlap: {cfg.get('overlap_size', 64)} · Top-K: {cfg.get('top_k', 5)}")
-            except Exception:
-                pass
-
-        st.divider()
-
-        # --- Cloud Storage ---
-        st.subheader("☁️ Cloud Storage")
-
-        # Show connected services
-        if st.session_state.token:
-            try:
-                svc_resp = requests.get(
-                    f"{API_BASE}/cloud/services",
-                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                    timeout=5,
-                )
-                connected = svc_resp.json().get("services", []) if svc_resp.status_code == 200 else []
-            except Exception:
-                connected = []
-
-            if connected:
-                for svc in connected:
-                    with st.expander(f"✅ {svc.get('display_name', svc['service_name'])}"):
-                        st.caption(f"ID: {svc['id']} · Since: {svc.get('created_at', '')[:10]}")
-
-                        # File browser
-                        browse_path = st.text_input("Browse path", value="/", key=f"browse_{svc['id']}")
-                        if st.button("Browse", key=f"btn_browse_{svc['id']}"):
-                            try:
-                                files_resp = requests.get(
-                                    f"{API_BASE}/cloud/{svc['id']}/files",
-                                    params={"folder_path": browse_path},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                                if files_resp.status_code == 200:
-                                    file_list = files_resp.json().get("files", [])
-                                    for fi in file_list[:20]:
-                                        icon = "📁" if fi.get("is_folder") else "📄"
-                                        st.text(f"{icon} {fi['name']}  ({fi.get('file_type', '')})")
-                                else:
-                                    st.error("Failed to list files")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-
-                        # Index folder
-                        idx_path = st.text_input("Index folder", value="/", key=f"idx_{svc['id']}")
-                        if st.button("Index Folder", key=f"btn_idx_{svc['id']}"):
-                            try:
-                                idx_resp = requests.post(
-                                    f"{API_BASE}/cloud/{svc['id']}/index-folder",
-                                    json={"folder_path": idx_path, "recursive": True},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=60,
-                                )
-                                if idx_resp.status_code == 200:
-                                    data = idx_resp.json()
-                                    st.success(f"Indexed {len(data.get('results', []))} files")
-                                else:
-                                    st.error(f"Failed: {idx_resp.text}")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-
-                        # Disconnect
-                        if st.button("Disconnect", key=f"disc_{svc['id']}"):
-                            try:
-                                requests.delete(
-                                    f"{API_BASE}/cloud/disconnect/{svc['id']}",
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=5,
-                                )
-                                st.rerun()
-                            except Exception:
-                                pass
-
-            # Connect new service
-            with st.expander("➕ Connect New Service"):
-                cloud_type = st.selectbox(
-                    "Service",
-                    ["local", "s3", "azure_blob", "google_drive", "onedrive", "dropbox"],
-                    format_func=lambda x: {"local": "📁 Local Filesystem", "s3": "☁️ AWS S3",
-                                           "azure_blob": "🔷 Azure Blob Storage",
-                                           "google_drive": "📂 Google Drive",
-                                           "onedrive": "📘 Microsoft OneDrive",
-                                           "dropbox": "📦 Dropbox"}.get(x, x),
-                    key="cloud_svc_type",
-                )
-
-                if cloud_type == "local":
-                    local_path = st.text_input("Folder path", placeholder="/Users/you/Documents", key="local_path")
-                    if st.button("Connect Local Folder", key="connect_local_folder"):
-                        if local_path:
-                            try:
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "local", "credentials": {"path": local_path},
-                                          "display_name": f"Local: {os.path.basename(local_path)}"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=10,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-
-                elif cloud_type == "s3":
-                    s3_key = st.text_input("Access Key ID", key="s3_key")
-                    s3_secret = st.text_input("Secret Access Key", type="password", key="s3_secret")
-                    s3_bucket = st.text_input("Bucket Name", key="s3_bucket")
-                    s3_region = st.text_input("Region", value="us-east-1", key="s3_region")
-                    if st.button("Connect S3", key="connect_s3"):
-                        if all([s3_key, s3_secret, s3_bucket]):
-                            try:
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "s3",
-                                          "credentials": {"access_key": s3_key, "secret_key": s3_secret,
-                                                          "bucket": s3_bucket, "region": s3_region},
-                                          "display_name": f"S3: {s3_bucket}"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=15,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected to S3!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Please fill all S3 fields")
-
-                elif cloud_type == "azure_blob":
-                    az_auth = st.radio("Auth Method", ["Connection String", "Account Key"], key="az_auth", horizontal=True)
-                    az_container = st.text_input("Container Name", key="az_container")
-                    if az_auth == "Connection String":
-                        az_conn_str = st.text_input("Connection String", type="password", key="az_conn_str")
-                        az_creds = {"connection_string": az_conn_str, "container": az_container}
-                        can_connect = bool(az_conn_str and az_container)
-                    else:
-                        az_acct = st.text_input("Account Name", key="az_acct")
-                        az_key = st.text_input("Account Key", type="password", key="az_key")
-                        az_creds = {"account_name": az_acct, "account_key": az_key, "container": az_container}
-                        can_connect = bool(az_acct and az_key and az_container)
-                    if st.button("Connect Azure Blob", key="connect_azure"):
-                        if can_connect:
-                            try:
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "azure_blob",
-                                          "credentials": az_creds,
-                                          "display_name": f"Azure: {az_container}"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=15,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected to Azure Blob!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Please fill all required Azure fields")
-
-                elif cloud_type == "google_drive":
-                    gd_token = st.text_input("Access Token", type="password", key="gd_token")
-                    gd_refresh = st.text_input("Refresh Token (optional)", type="password", key="gd_refresh")
-                    gd_client_id = st.text_input("Client ID (optional)", key="gd_client_id")
-                    gd_client_secret = st.text_input("Client Secret (optional)", type="password", key="gd_client_secret")
-                    st.caption("💡 Provide a valid OAuth2 access token from Google Cloud Console. Add refresh token + client credentials for auto-renewal.")
-                    if st.button("Connect Google Drive", key="connect_gdrive"):
-                        if gd_token:
-                            try:
-                                creds = {"access_token": gd_token}
-                                if gd_refresh:
-                                    creds["refresh_token"] = gd_refresh
-                                if gd_client_id:
-                                    creds["client_id"] = gd_client_id
-                                if gd_client_secret:
-                                    creds["client_secret"] = gd_client_secret
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "google_drive", "credentials": creds,
-                                          "display_name": "Google Drive"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=15,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected to Google Drive!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Access token is required")
-
-                elif cloud_type == "onedrive":
-                    od_auth = st.radio("Auth Method", ["Access Token", "Client Credentials"], key="od_auth", horizontal=True)
-                    if od_auth == "Access Token":
-                        od_token = st.text_input("Access Token", type="password", key="od_token")
-                        od_creds = {"access_token": od_token}
-                        can_connect_od = bool(od_token)
-                    else:
-                        od_client_id = st.text_input("Client ID", key="od_client_id")
-                        od_client_secret = st.text_input("Client Secret", type="password", key="od_client_secret")
-                        od_refresh = st.text_input("Refresh Token", type="password", key="od_refresh")
-                        od_tenant = st.text_input("Tenant ID", value="common", key="od_tenant")
-                        od_creds = {"client_id": od_client_id, "client_secret": od_client_secret,
-                                    "refresh_token": od_refresh, "tenant_id": od_tenant}
-                        can_connect_od = bool(od_client_id and od_client_secret and od_refresh)
-                    st.caption("💡 Requires an Azure AD App Registration with Microsoft Graph Files.Read permissions.")
-                    if st.button("Connect OneDrive", key="connect_onedrive"):
-                        if can_connect_od:
-                            try:
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "onedrive", "credentials": od_creds,
-                                          "display_name": "OneDrive"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=15,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected to OneDrive!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Please fill all required fields")
-
-                elif cloud_type == "dropbox":
-                    db_auth = st.radio("Auth Method", ["Access Token", "App Credentials"], key="db_auth", horizontal=True)
-                    if db_auth == "Access Token":
-                        db_token = st.text_input("Access Token", type="password", key="db_token")
-                        db_creds = {"access_token": db_token}
-                        can_connect_db = bool(db_token)
-                    else:
-                        db_app_key = st.text_input("App Key", key="db_app_key")
-                        db_app_secret = st.text_input("App Secret", type="password", key="db_app_secret")
-                        db_refresh = st.text_input("Refresh Token", type="password", key="db_refresh")
-                        db_creds = {"app_key": db_app_key, "app_secret": db_app_secret,
-                                    "refresh_token": db_refresh}
-                        can_connect_db = bool(db_app_key and db_app_secret and db_refresh)
-                    st.caption("💡 Create a Dropbox App at dropbox.com/developers and generate an access token.")
-                    if st.button("Connect Dropbox", key="connect_dropbox"):
-                        if can_connect_db:
-                            try:
-                                resp = requests.post(
-                                    f"{API_BASE}/cloud/connect",
-                                    json={"service_name": "dropbox", "credentials": db_creds,
-                                          "display_name": "Dropbox"},
-                                    headers={"Authorization": f"Bearer {st.session_state.token}"},
-                                    timeout=15,
-                                )
-                                if resp.status_code == 200:
-                                    st.success("Connected to Dropbox!")
-                                    st.rerun()
-                                else:
-                                    st.error(resp.json().get("detail", "Failed"))
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                        else:
-                            st.warning("Please fill all required fields")
-
-
-# ===================== MAIN CONTENT =====================
-if st.session_state.token is None:
-    # ---------- NOT LOGGED IN: Welcome + Auth ----------
-    st.title("🤖 RAPID")
-    st.caption("RAG Application for Private Instant Deployment")
-    st.markdown("Upload documents and chat with your data using advanced AI.")
+            else:
+                _show_error(resp)
 
     st.divider()
 
-    tab_login, tab_register = st.tabs(["Login", "Register"])
+    resp = _api("get", "/documents")
+    if resp.status_code != 200:
+        _show_error(resp)
+        return
 
-    with tab_login:
-        with st.form("login_form"):
-            login_user = st.text_input("Username", key="login_user")
-            login_pass = st.text_input("Password", type="password", key="login_pass")
-            submitted = st.form_submit_button("Login")
-            if submitted:
-                if login_user and login_pass:
-                    ok, err = _authenticate(login_user, login_pass)
-                    if ok:
-                        st.rerun()
-                    else:
-                        st.error(err)
+    docs = resp.json()
+    if not docs:
+        st.markdown(
+            '<div style="text-align:center;color:#8e8ea0;padding:3rem 0;">'
+            'No documents yet.<br>Upload your first document above.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.caption(f"{len(docs)} document(s) indexed")
+
+    for doc in docs:
+        c1, c2 = st.columns([11, 1])
+        with c1:
+            pill = _dpill(doc.get("doc_type","?"))
+            st.markdown(
+                f'**{doc["filename"]}**{pill} '
+                f'<span style="color:#8e8ea0;font-size:0.8rem;">'
+                f'{doc["chunks"]} chunks · {doc["uploader"]}</span>',
+                unsafe_allow_html=True,
+            )
+            st.caption(doc.get("uploaded_at","")[:19].replace("T", "  "))
+        with c2:
+            if st.button("🗑", key=f"del_{doc['doc_id']}", help="Delete"):
+                r = _api("delete", f"/documents/{doc['doc_id']}")
+                if r.status_code == 204:
+                    st.rerun()
                 else:
-                    st.warning("Please enter username and password")
+                    _show_error(r)
+        st.divider()
 
-    with tab_register:
-        with st.form("register_form"):
-            reg_user = st.text_input("Username", key="reg_user")
-            reg_pass = st.text_input("Password", type="password", key="reg_pass")
-            submitted = st.form_submit_button("Register")
-            if submitted:
-                if reg_user and reg_pass:
-                    ok, err = _register(reg_user, reg_pass)
-                    if ok:
-                        st.success("Registration successful! Please switch to the Login tab.")
-                    else:
-                        st.error(err)
-                else:
-                    st.warning("Please fill in all fields")
 
-else:
-    # ---------- LOGGED IN: Main ----------
-    st.title("🤖 RAPID")
+# ─────────────────────────────────────────────────────────────────────────────
+# Database
+# ─────────────────────────────────────────────────────────────────────────────
 
-    if st.session_state.get("page", "Chat") == "Admin" and st.session_state.role == "admin":
-        st.subheader("Admin Dashboard")
-        tabs = st.tabs(["Users", "Groups", "Tokens"])
-        headers = {"Authorization": f"Bearer {st.session_state.token}"}
+def _database_panel():
+    st.markdown('<div class="ph">🗄️ Database Connections</div>', unsafe_allow_html=True)
 
-        with tabs[0]:
-            st.markdown("### Users")
-            col1, col2 = st.columns(2)
-            with col1:
-                with st.form("create_user_form"):
-                    new_username = st.text_input("Username")
-                    new_password = st.text_input("Password", type="password")
-                    new_role = st.selectbox("Role", ["user", "manager", "admin"])
-                    submitted = st.form_submit_button("Create User")
-                    if submitted:
-                        resp = requests.post(
-                            f"{API_BASE}/api/admin/users",
-                            json={
-                                "username": new_username,
-                                "password": new_password,
-                                "role": new_role,
-                            },
-                            headers=headers,
-                            timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            st.success("User created")
-                        else:
-                            st.error(resp.json().get("detail", "Failed"))
-            with col2:
-                if st.button("Refresh Users"):
-                    pass
-            try:
-                resp = requests.get(f"{API_BASE}/api/admin/users", headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    st.dataframe(resp.json().get("users", []))
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-        with tabs[1]:
-            st.markdown("### Groups")
-            with st.form("create_group_form"):
-                group_name = st.text_input("Group Name")
-                group_desc = st.text_input("Description")
-                submitted = st.form_submit_button("Create Group")
-                if submitted:
-                    resp = requests.post(
-                        f"{API_BASE}/api/groups",
-                        json={"group_name": group_name, "description": group_desc},
-                        headers=headers,
-                        timeout=10,
-                    )
-                    if resp.status_code == 200:
-                        st.success("Group created")
-                    else:
-                        st.error(resp.json().get("detail", "Failed"))
-            try:
-                resp = requests.get(f"{API_BASE}/api/groups", headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    st.dataframe(resp.json().get("groups", []))
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-        with tabs[2]:
-            st.markdown("### API Tokens")
-            with st.form("create_token_form"):
-                service_type = st.text_input("Service Type")
-                token_name = st.text_input("Token Name")
-                token_value = st.text_input("Token", type="password")
-                submitted = st.form_submit_button("Add Token")
-                if submitted:
-                    resp = requests.post(
-                        f"{API_BASE}/api/admin/tokens",
-                        json={
-                            "service_type": service_type,
-                            "token_name": token_name,
-                            "token": token_value,
-                        },
-                        headers=headers,
-                        timeout=10,
-                    )
-                    if resp.status_code == 200:
-                        st.success("Token added")
-                    else:
-                        st.error(resp.json().get("detail", "Failed"))
-            try:
-                resp = requests.get(f"{API_BASE}/api/admin/tokens", headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    st.dataframe(resp.json().get("tokens", []))
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    else:
-        # ---------- Chat Interface ----------
-
-        # Context bar: show what data sources are active
-        active_sources = []
-        if st.session_state.uploaded_files:
-            active_sources.append(f"📄 {len(st.session_state.uploaded_files)} document(s)")
-        if st.session_state.active_db_connections:
-            for c in st.session_state.active_db_connections:
-                active_sources.append(f"🗄️ {c['conn_id']}")
-        if active_sources:
-            st.caption("**Active data sources:** " + " · ".join(active_sources))
-
-        # Conversation management row
-        col_conv, col_new = st.columns([4, 1])
-        with col_new:
-            if st.button("+ New Chat", use_container_width=True):
-                try:
-                    r = requests.post(
-                        f"{API_BASE}/api/conversations",
-                        json={"title": "Chat"},
-                        headers={"Authorization": f"Bearer {st.session_state.token}"},
-                        timeout=10,
-                    )
-                    if r.status_code == 200:
-                        st.session_state.conversation_id = r.json()["conversation_id"]
-                        st.session_state.messages = []
-                        _save_session()
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-        # Display chat history
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                # Show sources if stored
-                if msg.get("sources"):
-                    with st.expander("Sources", expanded=False):
-                        for src in msg["sources"]:
-                            if isinstance(src, dict):
-                                st.caption(f"📄 {src.get('filename', 'unknown')} — chunk {src.get('chunk_id', '')}")
-                            else:
-                                st.caption(str(src))
-
-        # Chat input
-        has_data = bool(st.session_state.uploaded_files or st.session_state.active_db_connections)
-        placeholder = "Ask a question about your documents or database..." if has_data else "Upload a document or connect a database to get started..."
-
-        if prompt := st.chat_input(placeholder):
-            if not has_data:
-                st.warning("Please upload a document or connect a database first.")
+    with st.form("db_form"):
+        st.text_input("Connection ID", key="db_id", placeholder="analytics_db")
+        st.text_input("URI", key="db_uri",
+                      placeholder="sqlite:///data/my.db   |   postgresql://user:pass@host/db")
+        if st.form_submit_button("Connect", type="primary"):
+            r = _api("post", "/db/connect",
+                     json={"conn_id": st.session_state.db_id, "uri": st.session_state.db_uri})
+            if r.status_code == 200:
+                st.success(f"✓ Connected: **{r.json()['conn_id']}**")
+                st.rerun()
             else:
-                # Show user message
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+                _show_error(r)
 
-                # Ensure we have a conversation
-                if not st.session_state.conversation_id:
-                    try:
-                        r = requests.post(
-                            f"{API_BASE}/api/conversations",
-                            json={"title": "Chat"},
-                            headers={"Authorization": f"Bearer {st.session_state.token}"},
-                            timeout=10,
-                        )
+    st.divider()
+
+    resp = _api("get", "/db/connections")
+    if resp.status_code != 200:
+        _show_error(resp)
+        return
+
+    conns = resp.json().get("connections", [])
+    if not conns:
+        st.markdown(
+            '<div style="text-align:center;color:#8e8ea0;padding:2rem 0;">No connections yet.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.caption(f"{len(conns)} connection(s)")
+    for c in conns:
+        col1, col2 = st.columns([5, 2])
+        col1.markdown(f'🗄️ **{c}**')
+        if _is_admin():
+            if col2.button("Scan governance", key=f"scan_{c}", use_container_width=True):
+                with st.spinner(f"Scanning {c}…"):
+                    r = _api("post", f"/governance/columns/scan?conn_id={c}")
+                if r.status_code == 200:
+                    d = r.json()
+                    st.success(f"✓ {d['columns_registered']} new column rules registered.")
+                    st.rerun()
+                else:
+                    _show_error(r)
+        st.divider()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Governance
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _governance_panel():
+    st.markdown('<div class="ph">🔒 Governance</div>', unsafe_allow_html=True)
+
+    if not _is_admin():
+        st.warning("Admin access required.")
+        return
+
+    tab_rules, tab_policy = st.tabs(["Column Rules", "Policy Upload"])
+
+    with tab_rules:
+        resp = _api("get", "/governance/columns")
+        if resp.status_code != 200:
+            _show_error(resp)
+            return
+
+        rules = resp.json().get("rules", [])
+        if not rules:
+            st.info("No column rules yet. Connect a database and scan its governance schema.")
+            return
+
+        from collections import Counter
+        counts = Counter(r["default_state"] for r in rules)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total", len(rules))
+        m2.metric("Allowed",   counts.get("allowed",   0))
+        m3.metric("Anonymize", counts.get("anonymize", 0))
+        m4.metric("Blocked",   counts.get("block",     0))
+
+        st.divider()
+
+        tables: dict = {}
+        for r in rules:
+            tables.setdefault(r["table_name"], []).append(r)
+
+        for tbl, cols in sorted(tables.items()):
+            n_blk  = sum(1 for c in cols if c["default_state"] == "block")
+            n_anon = sum(1 for c in cols if c["default_state"] == "anonymize")
+            chips  = ""
+            if n_blk:
+                chips += f' <span class="chip chip-red">{n_blk} blocked</span>'
+            if n_anon:
+                chips += f' <span class="chip chip-amber">{n_anon} anonymized</span>'
+
+            with st.expander(
+                f"**{tbl}** &nbsp;·&nbsp; {len(cols)} columns" + (" &nbsp;" + chips if chips else ""),
+                expanded=False,
+            ):
+                # Column header
+                h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
+                h1.markdown("<small style='color:#9ca3af;'>Column</small>", unsafe_allow_html=True)
+                h2.markdown("<small style='color:#9ca3af;'>Current</small>",  unsafe_allow_html=True)
+                h3.markdown("<small style='color:#9ca3af;'>Change to</small>", unsafe_allow_html=True)
+
+                for col in sorted(cols, key=lambda x: x["column_name"]):
+                    r1, r2, r3, r4 = st.columns([3, 2, 2, 1])
+                    r1.code(col["column_name"], language=None)
+                    r2.markdown(_gov_chip(col["default_state"]), unsafe_allow_html=True)
+                    new_state = r3.selectbox(
+                        "s", ["allowed","anonymize","block"],
+                        index=["allowed","anonymize","block"].index(col["default_state"]),
+                        key=f"gs_{tbl}_{col['column_name']}",
+                        label_visibility="collapsed",
+                    )
+                    if r4.button("Save", key=f"sv_{tbl}_{col['column_name']}"):
+                        r = _api("put", f"/governance/columns/{tbl}/{col['column_name']}",
+                                 json={"default_state": new_state,
+                                       "dept_overrides": col.get("dept_overrides", {}),
+                                       "role_overrides": col.get("role_overrides", {})})
                         if r.status_code == 200:
-                            st.session_state.conversation_id = r.json()["conversation_id"]
-                    except Exception:
-                        pass
-
-                # Stream response via conversation API
-                with st.chat_message("assistant"):
-                    response_placeholder = st.empty()
-                    full_response = ""
-                    sources = []
-
-                    try:
-                        conv_id = st.session_state.conversation_id
-                        url = f"{API_BASE}/api/conversations/{conv_id}/messages" if conv_id else f"{API_BASE}/query"
-                        headers = {"Authorization": f"Bearer {st.session_state.token}"}
-
-                        if conv_id:
-                            with requests.post(
-                                url,
-                                json={"message": prompt, "stream": True},
-                                headers=headers,
-                                stream=True,
-                                timeout=120,
-                            ) as resp:
-                                if resp.status_code == 401:
-                                    st.error("Session expired. Please login again.")
-                                    _clear_session()
-                                    st.rerun()
-                                elif resp.status_code == 429:
-                                    st.warning("Rate limit exceeded. Please wait.")
-                                elif resp.status_code == 200:
-                                    import json as _json
-                                    for line in resp.iter_lines():
-                                        if not line:
-                                            continue
-                                        line_str = line.decode("utf-8") if isinstance(line, bytes) else line
-                                        if line_str.startswith("data: "):
-                                            payload_str = line_str[6:]
-                                            try:
-                                                payload = _json.loads(payload_str)
-                                                if payload.get("done"):
-                                                    sources = payload.get("sources", [])
-                                                elif "token" in payload:
-                                                    full_response += payload["token"]
-                                                    response_placeholder.markdown(full_response + "▌")
-                                            except _json.JSONDecodeError:
-                                                full_response += payload_str
-                                                response_placeholder.markdown(full_response + "▌")
-                                    response_placeholder.markdown(full_response)
-                                else:
-                                    err = resp.json().get("detail", "Query failed")
-                                    full_response = f"Error: {err}"
-                                    response_placeholder.markdown(full_response)
+                            st.success(f"Updated `{col['column_name']}` → {new_state}")
                         else:
-                            # Fallback to /query if no conversation
-                            resp = requests.post(
-                                f"{API_BASE}/query",
-                                json={"query": prompt},
-                                headers=headers,
-                                timeout=120,
-                            )
-                            if resp.status_code == 200:
-                                result = resp.json()
-                                full_response = result.get("answer", "No answer")
-                                sources = result.get("sources", [])
-                                response_placeholder.markdown(full_response)
-                            else:
-                                full_response = f"Error: {resp.json().get('detail', 'Query failed')}"
-                                response_placeholder.markdown(full_response)
+                            _show_error(r)
 
-                    except requests.exceptions.ConnectionError:
-                        full_response = "Cannot connect to the API server. Is it running?"
-                        response_placeholder.error(full_response)
-                    except Exception as e:
-                        full_response = f"Error: {e}"
-                        response_placeholder.error(full_response)
+    with tab_policy:
+        st.caption("Upload a compliance or data policy document to auto-extract column rules.")
+        conns = _api("get", "/db/connections")
+        conn_list = conns.json().get("connections",[]) if conns.status_code == 200 else []
+        conn_id = st.selectbox("Database (for schema context)", ["— none —"] + conn_list, key="pol_conn")
+        if conn_id == "— none —":
+            conn_id = ""
 
-                    # Show sources
-                    if sources:
-                        with st.expander("Sources", expanded=False):
-                            for src in sources:
-                                if isinstance(src, dict):
-                                    st.caption(f"📄 {src.get('filename', 'unknown')} — chunk {src.get('chunk_id', '')}")
-                                else:
-                                    st.caption(str(src))
+        pol_file = st.file_uploader("Policy document (.txt / .pdf / .docx)", type=["txt","pdf","docx"],
+                                    key="pol_up")
+        if pol_file and st.button("Extract Rules", type="primary", key="ext_rules"):
+            with st.spinner("Analyzing policy…"):
+                r = _api("post", "/governance/policy-upload",
+                         files={"file": (pol_file.name, pol_file.getvalue())},
+                         data={"conn_id": conn_id})
+            if r.status_code == 200:
+                res = r.json()
+                st.success(f"✓ Found **{res['count']}** proposed rule(s).")
+                if res.get("note"):
+                    st.info(res["note"])
+                for rule in res.get("proposed_rules", []):
+                    st.markdown(
+                        f'`{rule["table_name"]}.{rule["column_name"]}` → {_gov_chip(rule["default_state"])}',
+                        unsafe_allow_html=True,
+                    )
+            else:
+                _show_error(r)
 
-                    # Append to local messages
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": full_response,
-                        "sources": sources,
-                    })
 
-                _save_session()
+# ─────────────────────────────────────────────────────────────────────────────
+# Settings
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _provider_configurator(prefix: str, providers: list, fetch_endpoint: str, configure_endpoint: str):
+    """
+    Reusable step-by-step provider configurator.
+    prefix: "llm" or "emb" — used to namespace session state keys.
+    """
+    sk = lambda k: f"_{prefix}_{k}"   # session-state key helper
+
+    # ── Step 1: Provider ────────────────────────────────────────────────────
+    st.markdown("**1 · Select provider**")
+    provider = st.selectbox(
+        "Provider",
+        providers,
+        key=sk("provider"),
+        label_visibility="collapsed",
+    )
+
+    # Reset fetched models when provider changes
+    if st.session_state.get(sk("last_provider")) != provider:
+        for k in ("models", "conn_ok", "conn_err", "api_key_used", "base_url_used"):
+            st.session_state.pop(sk(k), None)
+        st.session_state[sk("last_provider")] = provider
+
+    # ── Step 2: Credentials ─────────────────────────────────────────────────
+    needs_key = provider not in ("ollama", "lmstudio", "sentence-transformers")
+    needs_url = provider in ("ollama", "lmstudio")
+
+    st.markdown("**2 · Credentials**")
+    api_key = ""
+    base_url = ""
+    if needs_key:
+        api_key = st.text_input(
+            "API Key",
+            type="password",
+            key=sk("api_key_input"),
+            placeholder="sk-…  (leave blank to reuse saved key)",
+        )
+    if needs_url:
+        base_url = st.text_input(
+            "Base URL",
+            key=sk("base_url_input"),
+            placeholder="http://localhost:11434" if provider == "ollama" else "http://localhost:1234",
+        )
+
+    if provider == "sentence-transformers":
+        st.caption("No API key needed — runs locally.")
+
+    # ── Check connection & fetch models ─────────────────────────────────────
+    if st.button("Check connection & fetch models", key=sk("fetch_btn"), use_container_width=True):
+        with st.spinner("Connecting…"):
+            r = _api("post", fetch_endpoint, json={
+                "provider": provider,
+                "api_key":  api_key  or None,
+                "base_url": base_url or None,
+            })
+        if r.status_code == 200:
+            data = r.json()
+            if data["status"] == "ok":
+                st.session_state[sk("models")]       = data["models"]
+                st.session_state[sk("conn_ok")]      = True
+                st.session_state[sk("conn_err")]     = ""
+                st.session_state[sk("api_key_used")] = api_key
+                st.session_state[sk("base_url_used")]= base_url
+            else:
+                st.session_state[sk("conn_ok")]  = False
+                st.session_state[sk("conn_err")] = data.get("message", "Unknown error")
+        else:
+            st.session_state[sk("conn_ok")]  = False
+            st.session_state[sk("conn_err")] = f"HTTP {r.status_code}"
+
+    # ── Connection status ────────────────────────────────────────────────────
+    if st.session_state.get(sk("conn_ok")):
+        st.markdown(
+            '<span class="dot d-green"></span> **Connected**',
+            unsafe_allow_html=True,
+        )
+    elif st.session_state.get(sk("conn_err")):
+        st.markdown(
+            f'<span class="dot d-red"></span> **Failed:** {st.session_state[sk("conn_err")]}',
+            unsafe_allow_html=True,
+        )
+
+    # ── Step 3: Model selection ──────────────────────────────────────────────
+    models = st.session_state.get(sk("models"), [])
+    if not models:
+        return
+
+    st.divider()
+    st.markdown(f"**3 · Choose model** &nbsp; <span style='color:#64748b;font-size:0.8rem;'>{len(models)} available</span>", unsafe_allow_html=True)
+
+    chosen_model = st.selectbox(
+        "Model",
+        models,
+        key=sk("model_sel"),
+        label_visibility="collapsed",
+    )
+
+    # ── Step 4: Set as default ───────────────────────────────────────────────
+    st.divider()
+    st.markdown("**4 · Apply**")
+    if st.button("Set as default model", key=sk("set_btn"), type="primary", use_container_width=True):
+        payload: dict = {"provider": provider, "model": chosen_model}
+        saved_key  = st.session_state.get(sk("api_key_used"))
+        saved_base = st.session_state.get(sk("base_url_used"))
+        if saved_key:  payload["api_key"]  = saved_key
+        if saved_base: payload["base_url"] = saved_base
+        r = _api("post", configure_endpoint, json=payload)
+        if r.status_code == 200:
+            st.success(f"✓ Default set: **{provider}** / `{chosen_model}`")
+        else:
+            _show_error(r)
+
+
+def _settings_panel():
+    st.markdown('<div class="ph">⚙️ Settings</div>', unsafe_allow_html=True)
+
+    if not _is_admin():
+        st.warning("Admin access required.")
+        return
+
+    tab_llm, tab_emb, tab_health = st.tabs(["LLM Provider", "Embeddings", "Health"])
+
+    with tab_llm:
+        # Current active config
+        resp = _api("get", "/llm/providers")
+        if resp.status_code == 200:
+            info = resp.json()
+            ap = info.get("active_provider") or "—"
+            am = info.get("active_model")    or "—"
+            avail = info.get("available", [])
+            dot = "d-green" if ap != "—" else "d-gray"
+            chips = "".join(f'<span class="chip chip-gray">{p}</span>' for p in avail)
+            st.markdown(
+                f'<div style="margin-bottom:1rem;padding:10px 14px;background:#f8f9fb;'
+                f'border:1px solid #e2e8f0;border-radius:8px;">'
+                f'<span class="dot {dot}"></span>'
+                f'<b>Active:</b> {ap} / <code>{am}</code>'
+                f'{"<br><small style=\'color:#64748b;\'>Configured: " + chips + "</small>" if avail else ""}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        _provider_configurator(
+            prefix="llm",
+            providers=["openai", "anthropic", "openrouter", "ollama", "lmstudio"],
+            fetch_endpoint="/llm/fetch-models",
+            configure_endpoint="/llm/configure",
+        )
+
+    with tab_emb:
+        _provider_configurator(
+            prefix="emb",
+            providers=["openai", "sentence-transformers", "ollama"],
+            fetch_endpoint="/embedding/fetch-models",
+            configure_endpoint="/embedding/configure",
+        )
+
+    with tab_health:
+        if st.button("↻ Refresh"):
+            st.rerun()
+        resp = _api("get", "/health")
+        if resp.status_code != 200:
+            _show_error(resp)
+            return
+        h = resp.json()
+        overall = h.get("status","unknown")
+        dot = "d-green" if overall == "ok" else "d-red"
+        st.markdown(
+            f'<div style="margin-bottom:1rem;">'
+            f'<span class="dot {dot}"></span><b>Status: {overall.upper()}</b></div>',
+            unsafe_allow_html=True,
+        )
+        comps = h.get("components", {}) or {k: v for k, v in h.items() if k != "status"}
+        for name, val in comps.items():
+            if isinstance(val, dict):
+                ok, detail = val.get("status","ok") == "ok", val.get("detail","")
+            else:
+                ok, detail = str(val) == "ok", str(val)
+            d = "d-green" if ok else "d-red"
+            st.markdown(
+                f'<div class="hcard"><span class="dot {d}"></span>'
+                f'<div><div class="hcard-name">{name}</div>'
+                f'<div class="hcard-det">{detail}</div></div></div>',
+                unsafe_allow_html=True,
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Audit
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _audit_panel():
+    st.markdown('<div class="ph">📋 Audit Log</div>', unsafe_allow_html=True)
+
+    if not _is_admin():
+        st.warning("Admin access required.")
+        return
+
+    c1, c2 = st.columns([4, 1])
+    n = c1.slider("Entries to show", 10, 500, 100, key="audit_n")
+    if c2.button("↻ Refresh", key="ar"):
+        st.rerun()
+
+    resp = _api("get", f"/audit/log?n={n}")
+    if resp.status_code != 200:
+        _show_error(resp)
+        return
+
+    entries = resp.json()
+    if not entries:
+        st.info("Audit log is empty.")
+        return
+
+    rows_html = ""
+    for e in reversed(entries):
+        ts   = e.get("timestamp","")[:19].replace("T"," ")
+        user = e.get("username","—")
+        q    = (e.get("query") or e.get("raw") or "")[:160]
+        rows_html += (
+            f'<tr>'
+            f'<td class="ts-cell">{ts}</td>'
+            f'<td style="color:#6b7280;">{user}</td>'
+            f'<td class="q-cell">{q}</td>'
+            f'</tr>'
+        )
+
+    st.markdown(
+        f'<table class="atbl">'
+        f'<thead><tr><th>Timestamp</th><th>User</th><th>Query</th></tr></thead>'
+        f'<tbody>{rows_html}</tbody>'
+        f'</table>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main():
+    if not _token():
+        _login_page()
+        return
+
+    _sidebar()
+
+    page = _page()
+    if page == "Chat":
+        _chat_panel()
+    elif page == "Documents":
+        _documents_panel()
+    elif page == "Database":
+        _database_panel()
+    elif page == "Governance":
+        _governance_panel()
+    elif page == "Settings":
+        _settings_panel()
+    elif page == "Audit":
+        _audit_panel()
+
+
+if __name__ == "__main__":
+    main()

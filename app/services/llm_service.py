@@ -1,303 +1,399 @@
+"""
+LLM Service — multi-provider async chat interface.
+
+Provides a single `async chat(prompt, system, max_tokens) -> str` method
+used by all agents. No LangChain. Raw SDK calls only.
+"""
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import os
 import logging
 import requests
-import json
-from openai import OpenAI
-import anthropic
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_community.llms import Ollama
+import httpx
 
 logger = logging.getLogger(__name__)
 
-class LLMProvider(ABC):
-    """Abstract base class for LLM providers"""
 
-    @abstractmethod
-    def __init__(self, config: Dict[str, Any]):
-        pass
+class LLMProvider(ABC):
+    """Abstract base class for LLM providers."""
 
     @abstractmethod
     def is_available(self) -> bool:
-        """Check if the provider is available and configured"""
         pass
 
     @abstractmethod
     def list_models(self) -> List[str]:
-        """List available models for this provider"""
         pass
 
     @abstractmethod
     def test_connection(self, model: str) -> bool:
-        """Test connection to a specific model"""
         pass
 
     @abstractmethod
-    def get_langchain_llm(self, model: str, **kwargs) -> Any:
-        """Get LangChain LLM instance"""
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
         pass
 
-    @abstractmethod
-    def get_embeddings_client(self, model: str = None) -> Any:
-        """Get embeddings client (if supported)"""
-        pass
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI cloud provider"""
+    DEFAULT_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
 
     def __init__(self, config: Dict[str, Any]):
         self.api_key = config.get("api_key", os.getenv("OPENAI_API_KEY"))
-        self.client = None
-        if self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+        self._sync_client = None
+        self._async_client = None
+
+    def _get_sync(self):
+        if self._sync_client is None and self.api_key:
+            from openai import OpenAI
+            self._sync_client = OpenAI(api_key=self.api_key)
+        return self._sync_client
+
+    def _get_async(self):
+        if self._async_client is None and self.api_key:
+            from openai import AsyncOpenAI
+            self._async_client = AsyncOpenAI(api_key=self.api_key)
+        return self._async_client
 
     def is_available(self) -> bool:
-        return self.api_key is not None and self.client is not None
+        return bool(self.api_key)
 
     def list_models(self) -> List[str]:
         if not self.is_available():
             return []
         try:
-            models = self.client.models.list()
-            # Filter for chat models
-            chat_models = [m.id for m in models.data if m.id.startswith(('gpt-', 'chatgpt-'))]
-            return sorted(chat_models)
+            client = self._get_sync()
+            models = client.models.list()
+            chat_models = [
+                m.id for m in models.data
+                if m.id.startswith(("gpt-", "chatgpt-", "o1", "o3"))
+            ]
+            return sorted(chat_models) or self.DEFAULT_MODELS
         except Exception:
-            return ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"]  # Fallback
+            return self.DEFAULT_MODELS
 
     def test_connection(self, model: str) -> bool:
         if not self.is_available():
             return False
         try:
-            response = self.client.chat.completions.create(
+            client = self._get_sync()
+            resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=5
+                max_tokens=5,
             )
-            return len(response.choices) > 0
+            return len(resp.choices) > 0
         except Exception:
             return False
 
-    def get_langchain_llm(self, model: str, **kwargs) -> ChatOpenAI:
-        return ChatOpenAI(
-            model=model,
-            openai_api_key=self.api_key,
-            temperature=kwargs.get('temperature', 0),
-            max_tokens=kwargs.get('max_tokens', 500)
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        client = self._get_async()
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        resp = await client.chat.completions.create(
+            model=model or "gpt-4o-mini",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
+        return resp.choices[0].message.content.strip()
 
-    def get_embeddings_client(self, model: str = "text-embedding-3-small") -> OpenAI:
-        return self.client
 
 class AnthropicProvider(LLMProvider):
-    """Anthropic Claude provider"""
+    DEFAULT_MODELS = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
 
     def __init__(self, config: Dict[str, Any]):
         self.api_key = config.get("api_key", os.getenv("ANTHROPIC_API_KEY"))
-        self.client = None
-        if self.api_key:
-            self.client = anthropic.Anthropic(api_key=self.api_key)
+        self._sync_client = None
+        self._async_client = None
+
+    def _get_sync(self):
+        if self._sync_client is None and self.api_key:
+            import anthropic
+            self._sync_client = anthropic.Anthropic(api_key=self.api_key)
+        return self._sync_client
+
+    def _get_async(self):
+        if self._async_client is None and self.api_key:
+            import anthropic
+            self._async_client = anthropic.AsyncAnthropic(api_key=self.api_key)
+        return self._async_client
 
     def is_available(self) -> bool:
-        return self.api_key is not None and self.client is not None
+        return bool(self.api_key)
 
     def list_models(self) -> List[str]:
         if not self.is_available():
             return []
         try:
-            models = self.client.models.list()
-            return [m.id for m in models.data]
+            client = self._get_sync()
+            models = client.models.list()
+            return [m.id for m in models.data] or self.DEFAULT_MODELS
         except Exception:
-            return ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]  # Fallback
+            return self.DEFAULT_MODELS
 
     def test_connection(self, model: str) -> bool:
         if not self.is_available():
             return False
         try:
-            response = self.client.messages.create(
-                model=model,
-                max_tokens=5,
-                messages=[{"role": "user", "content": "Hello"}]
+            client = self._get_sync()
+            resp = client.messages.create(
+                model=model, max_tokens=5,
+                messages=[{"role": "user", "content": "Hello"}],
             )
-            return len(response.content) > 0
+            return len(resp.content) > 0
         except Exception:
             return False
 
-    def get_langchain_llm(self, model: str, **kwargs) -> ChatAnthropic:
-        return ChatAnthropic(
-            model=model,
-            anthropic_api_key=self.api_key,
-            temperature=kwargs.get('temperature', 0),
-            max_tokens=kwargs.get('max_tokens', 500)
-        )
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        client = self._get_async()
+        kwargs: Dict[str, Any] = {
+            "model": model or "claude-sonnet-4-6",
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+        }
+        if system:
+            kwargs["system"] = system
+        resp = await client.messages.create(**kwargs)
+        return resp.content[0].text.strip()
 
-    def get_embeddings_client(self, model: str = None) -> None:
-        return None  # Anthropic doesn't provide embeddings
 
 class OpenRouterProvider(LLMProvider):
-    """OpenRouter provider for multiple models"""
+    BASE_URL = "https://openrouter.ai/api/v1"
 
     def __init__(self, config: Dict[str, Any]):
         self.api_key = config.get("api_key", os.getenv("OPENROUTER_API_KEY"))
-        self.base_url = "https://openrouter.ai/api/v1"
-        self.client = None
-        if self.api_key:
-            self.client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
+        self._sync_client = None
+        self._async_client = None
+
+    def _get_sync(self):
+        if self._sync_client is None and self.api_key:
+            from openai import OpenAI
+            self._sync_client = OpenAI(api_key=self.api_key, base_url=self.BASE_URL)
+        return self._sync_client
+
+    def _get_async(self):
+        if self._async_client is None and self.api_key:
+            from openai import AsyncOpenAI
+            self._async_client = AsyncOpenAI(api_key=self.api_key, base_url=self.BASE_URL)
+        return self._async_client
 
     def is_available(self) -> bool:
-        return self.api_key is not None and self.client is not None
+        return bool(self.api_key)
 
     def list_models(self) -> List[str]:
         if not self.is_available():
             return []
         try:
-            # OpenRouter provides a models endpoint
-            response = requests.get(
-                f"{self.base_url}/models",
-                headers={"Authorization": f"Bearer {self.api_key}"}
+            resp = requests.get(
+                f"{self.BASE_URL}/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=10,
             )
-            if response.status_code == 200:
-                data = response.json()
-                return [model["id"] for model in data.get("data", [])]
-            else:
-                return []  # Fallback to empty list
+            if resp.status_code == 200:
+                return [m["id"] for m in resp.json().get("data", [])]
         except Exception:
-            return ["anthropic/claude-3-opus", "openai/gpt-4", "meta-llama/llama-2-70b-chat"]  # Fallback
+            pass
+        return []
 
     def test_connection(self, model: str) -> bool:
         if not self.is_available():
             return False
         try:
-            response = self.client.chat.completions.create(
+            client = self._get_sync()
+            resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=5
+                max_tokens=5,
             )
-            return len(response.choices) > 0
+            return len(resp.choices) > 0
         except Exception:
             return False
 
-    def get_langchain_llm(self, model: str, **kwargs) -> ChatOpenAI:
-        return ChatOpenAI(
-            model=model,
-            openai_api_key=self.api_key,
-            base_url=self.base_url,
-            temperature=kwargs.get('temperature', 0),
-            max_tokens=kwargs.get('max_tokens', 500)
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        client = self._get_async()
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        resp = await client.chat.completions.create(
+            model=model or "openai/gpt-4o-mini",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
+        return resp.choices[0].message.content.strip()
 
-    def get_embeddings_client(self, model: str = None) -> OpenAI:
-        return self.client
 
 class OllamaProvider(LLMProvider):
-    """Ollama local provider"""
-
     def __init__(self, config: Dict[str, Any]):
-        self.base_url = config.get("base_url", "http://localhost:11434")
-        self.client = None
+        self.base_url = config.get(
+            "base_url", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        )
 
     def is_available(self) -> bool:
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
-            return response.status_code == 200
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            return resp.status_code == 200
         except Exception:
             return False
 
     def list_models(self) -> List[str]:
-        if not self.is_available():
-            return []
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                return [model["name"] for model in data.get("models", [])]
-            return []
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                return [m["name"] for m in resp.json().get("models", [])]
         except Exception:
-            return []
+            pass
+        return []
 
     def test_connection(self, model: str) -> bool:
         if not self.is_available():
             return False
         try:
-            response = requests.post(
+            resp = requests.post(
                 f"{self.base_url}/api/generate",
                 json={"model": model, "prompt": "Hello", "stream": False},
-                timeout=10
+                timeout=10,
             )
-            return response.status_code == 200
+            return resp.status_code == 200
         except Exception:
             return False
 
-    def get_langchain_llm(self, model: str, **kwargs) -> Ollama:
-        return Ollama(
-            model=model,
-            base_url=self.base_url,
-            temperature=kwargs.get('temperature', 0)
-        )
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": model or "llama3",
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                },
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"].strip()
 
-    def get_embeddings_client(self, model: str = None) -> None:
-        return None  # Ollama doesn't provide direct embeddings API
 
 class LMStudioProvider(LLMProvider):
-    """LM Studio local provider"""
-
     def __init__(self, config: Dict[str, Any]):
-        self.base_url = config.get("base_url", "http://localhost:1234")
-        self.client = None
+        self.base_url = config.get(
+            "base_url", os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")
+        )
+        self._sync_client = None
+        self._async_client = None
+
+    def _get_sync(self):
+        if self._sync_client is None:
+            from openai import OpenAI
+            self._sync_client = OpenAI(base_url=f"{self.base_url}/v1", api_key="lm-studio")
+        return self._sync_client
+
+    def _get_async(self):
+        if self._async_client is None:
+            from openai import AsyncOpenAI
+            self._async_client = AsyncOpenAI(
+                base_url=f"{self.base_url}/v1", api_key="lm-studio"
+            )
+        return self._async_client
 
     def is_available(self) -> bool:
         try:
-            response = requests.get(f"{self.base_url}/v1/models", timeout=5)
-            return response.status_code == 200
+            resp = requests.get(f"{self.base_url}/v1/models", timeout=5)
+            return resp.status_code == 200
         except Exception:
             return False
 
     def list_models(self) -> List[str]:
-        if not self.is_available():
-            return []
         try:
-            response = requests.get(f"{self.base_url}/v1/models", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                return [model["id"] for model in data.get("data", [])]
-            return []
+            resp = requests.get(f"{self.base_url}/v1/models", timeout=5)
+            if resp.status_code == 200:
+                return [m["id"] for m in resp.json().get("data", [])]
         except Exception:
-            return ["local-model"]  # Fallback
+            pass
+        return ["local-model"]
 
     def test_connection(self, model: str) -> bool:
         if not self.is_available():
             return False
         try:
-            # Use OpenAI-compatible API
-            client = OpenAI(base_url=self.base_url, api_key="lm-studio")
-            response = client.chat.completions.create(
+            client = self._get_sync()
+            resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=5
+                max_tokens=5,
             )
-            return len(response.choices) > 0
+            return len(resp.choices) > 0
         except Exception:
             return False
 
-    def get_langchain_llm(self, model: str, **kwargs) -> ChatOpenAI:
-        return ChatOpenAI(
-            model=model,
-            base_url=self.base_url,
-            api_key="lm-studio",  # LM Studio doesn't require real API key
-            temperature=kwargs.get('temperature', 0),
-            max_tokens=kwargs.get('max_tokens', 500)
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        client = self._get_async()
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        resp = await client.chat.completions.create(
+            model=model or "local-model",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
+        return resp.choices[0].message.content.strip()
 
-    def get_embeddings_client(self, model: str = None) -> None:
-        return None  # LM Studio may not provide embeddings
 
 class LLMManager:
-    """Central manager for all LLM providers (singleton)"""
+    """Central manager for all LLM providers (singleton)."""
 
     _instance = None
 
@@ -311,108 +407,100 @@ class LLMManager:
         if self._initialized:
             return
         self._initialized = True
-        self.providers = {}
-        self.active_provider = None
-        self.active_model = None
+        self.providers: Dict[str, LLMProvider] = {}
+        self.active_provider: Optional[str] = None
+        self.active_model: Optional[str] = None
         self._load_providers()
 
     def _load_providers(self):
-        """Load all configured providers"""
-        # Cloud providers
-        self.providers["openai"] = OpenAIProvider({"api_key": os.getenv("OPENAI_API_KEY")})
-        self.providers["anthropic"] = AnthropicProvider({"api_key": os.getenv("ANTHROPIC_API_KEY")})
-        self.providers["openrouter"] = OpenRouterProvider({"api_key": os.getenv("OPENROUTER_API_KEY")})
-
-        # Local providers
-        self.providers["ollama"] = OllamaProvider({"base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")})
-        self.providers["lmstudio"] = LMStudioProvider({"base_url": os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")})
+        self.providers["openai"] = OpenAIProvider(
+            {"api_key": os.getenv("OPENAI_API_KEY")}
+        )
+        self.providers["anthropic"] = AnthropicProvider(
+            {"api_key": os.getenv("ANTHROPIC_API_KEY")}
+        )
+        self.providers["openrouter"] = OpenRouterProvider(
+            {"api_key": os.getenv("OPENROUTER_API_KEY")}
+        )
+        self.providers["ollama"] = OllamaProvider(
+            {"base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")}
+        )
+        self.providers["lmstudio"] = LMStudioProvider(
+            {"base_url": os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234")}
+        )
 
     def get_available_providers(self) -> List[str]:
-        """Get list of available providers"""
-        return [name for name, provider in self.providers.items() if provider.is_available()]
+        return [name for name, p in self.providers.items() if p.is_available()]
 
     def get_provider_models(self, provider_name: str) -> List[str]:
-        """Get models for a specific provider"""
         if provider_name in self.providers:
             return self.providers[provider_name].list_models()
         return []
 
     def test_provider_connection(self, provider_name: str, model: str) -> bool:
-        """Test connection to a provider and model"""
         if provider_name in self.providers:
             return self.providers[provider_name].test_connection(model)
         return False
 
-    def get_langchain_llm(self, provider_name: str, model: str, **kwargs) -> Any:
-        """Get LangChain LLM instance for a provider and model"""
-        if provider_name in self.providers:
-            return self.providers[provider_name].get_langchain_llm(model, **kwargs)
-        raise ValueError(f"Provider {provider_name} not found")
-
-    def get_embeddings_client(self, provider_name: str, model: str = None) -> Any:
-        """Get embeddings client for a provider"""
-        if provider_name in self.providers:
-            return self.providers[provider_name].get_embeddings_client(model)
-        return None
-
-    def update_provider_config(self, provider_name: str, config: Dict[str, Any]):
-        """Update configuration for a provider"""
-        if provider_name in self.providers:
-            # Reinitialize provider with new config
-            if provider_name == "openai":
-                self.providers[provider_name] = OpenAIProvider(config)
-            elif provider_name == "anthropic":
-                self.providers[provider_name] = AnthropicProvider(config)
-            elif provider_name == "openrouter":
-                self.providers[provider_name] = OpenRouterProvider(config)
-            elif provider_name == "ollama":
-                self.providers[provider_name] = OllamaProvider(config)
-            elif provider_name == "lmstudio":
-                self.providers[provider_name] = LMStudioProvider(config)
-
     def set_active(self, provider_name: str, model: str):
-        """Set the active provider and model for queries."""
+        if provider_name not in self.providers:
+            raise ValueError(f"Unknown provider: {provider_name}")
         self.active_provider = provider_name
         self.active_model = model
+        logger.info("Active LLM set to %s / %s", provider_name, model)
 
-    def get_chat_llm(self) -> Any:
-        """Get the chat LLM. Uses active provider/model if set, otherwise auto-selects."""
-        # Use explicitly configured provider/model if set
+    def update_provider_config(self, provider_name: str, config: Dict[str, Any]):
+        if provider_name == "openai":
+            self.providers[provider_name] = OpenAIProvider(config)
+        elif provider_name == "anthropic":
+            self.providers[provider_name] = AnthropicProvider(config)
+        elif provider_name == "openrouter":
+            self.providers[provider_name] = OpenRouterProvider(config)
+        elif provider_name == "ollama":
+            self.providers[provider_name] = OllamaProvider(config)
+        elif provider_name == "lmstudio":
+            self.providers[provider_name] = LMStudioProvider(config)
+
+    def _get_active(self) -> tuple:
+        """Return (provider, model) — uses configured active or auto-selects."""
         if self.active_provider and self.active_model:
-            try:
-                return self.get_langchain_llm(self.active_provider, self.active_model)
-            except Exception as e:
-                logger.warning("Failed to use active LLM %s/%s: %s", self.active_provider, self.active_model, e)
+            p = self.providers.get(self.active_provider)
+            if p and p.is_available():
+                return p, self.active_model
 
-        # Fallback: auto-select first available
-        available_providers = self.get_available_providers()
-        priority_order = ["openai", "anthropic", "openrouter", "ollama", "lmstudio"]
+        priority = ["openai", "anthropic", "openrouter", "ollama", "lmstudio"]
+        for name in priority:
+            p = self.providers.get(name)
+            if p and p.is_available():
+                models = p.list_models()
+                if models:
+                    return p, models[0]
 
-        for provider in priority_order:
-            if provider in available_providers:
-                try:
-                    models = self.get_provider_models(provider)
-                    if models:
-                        return self.get_langchain_llm(provider, models[0])
-                except Exception as e:
-                    logger.warning("Failed to get LLM from %s: %s", provider, e)
-                    continue
+        raise ValueError(
+            "No available LLM providers. Configure at least one "
+            "(OPENAI_API_KEY, ANTHROPIC_API_KEY, or local Ollama/LMStudio)."
+        )
 
-        raise ValueError("No available LLM providers found. Please configure at least one provider.")
+    async def chat(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.0,
+    ) -> str:
+        """Primary async interface used by all agents. Never returns raw data."""
+        provider, model = self._get_active()
+        return await provider.chat(
+            prompt=prompt,
+            system=system,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
 
-    def get_embedding_client(self) -> Any:
-        """Get the best available embedding client"""
-        available_providers = self.get_available_providers()
-        
-        # Try providers that support embeddings
-        embedding_providers = ["openai", "ollama", "lmstudio"]  # Add more as needed
-        
-        for provider in embedding_providers:
-            if provider in available_providers:
-                try:
-                    return self.get_embeddings_client(provider)
-                except Exception as e:
-                    logger.warning("Failed to get embeddings from %s: %s", provider, e)
-                    continue
-        
-        return None
+    def get_provider_info(self) -> Dict[str, Any]:
+        return {
+            "active_provider": self.active_provider,
+            "active_model": self.active_model,
+            "available": self.get_available_providers(),
+        }
