@@ -1,0 +1,244 @@
+# agents/hierarchy.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# THE ORG CHART IN DATA FORM
+# Change this file = change the org structure.
+# No Python changes needed to restructure reporting lines.
+# ─────────────────────────────────────────────────────────────────────────────
+
+organization:
+  name: "RAPID Enterprise"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LAYER 0 — STRATEGIC
+# ─────────────────────────────────────────────────────────────────────────────
+strategic:
+  ceo:
+    display_name: "Chief Executive Officer"
+    layer: strategic
+    reports_to: null                  # top of hierarchy
+    delegates_to: [cfo, cto, coo]
+    can_see_all_depts: true
+    config: agents/config/ceo.yaml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LAYER 1 — C-SUITE
+# ─────────────────────────────────────────────────────────────────────────────
+csuite:
+
+  cfo:
+    display_name: "Chief Financial Officer"
+    layer: csuite
+    reports_to: ceo
+    owns_division: commercial_finance
+    delegates_to: [finance, hr, legal, procurement]
+    can_see_depts: [finance, hr, legal, procurement, sales, marketing]
+    config: agents/config/cfo.yaml
+
+  cto:
+    display_name: "Chief Technology Officer"
+    layer: csuite
+    reports_to: ceo
+    owns_division: technology
+    delegates_to: [it, rd]
+    can_see_depts: [it, rd, ops]
+    config: agents/config/cto.yaml
+
+  coo:
+    display_name: "Chief Operating Officer"
+    layer: csuite
+    reports_to: ceo
+    owns_division: operations
+    delegates_to: [ops, sales, marketing, customer_success]
+    can_see_depts: [ops, sales, marketing, customer_success, it, procurement]
+    config: agents/config/coo.yaml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LAYER 2 — DIVISIONS
+# ─────────────────────────────────────────────────────────────────────────────
+divisions:
+
+  commercial_finance:
+    display_name: "Commercial & Finance Division"
+    head: cfo
+    departments: [finance, hr, legal, procurement]
+
+  technology:
+    display_name: "Technology Division"
+    head: cto
+    departments: [it, rd]
+
+  operations:
+    display_name: "Operations & Commercial Division"
+    head: coo
+    departments: [ops, sales, marketing, customer_success]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LAYER 3 — DEPARTMENTS
+# ─────────────────────────────────────────────────────────────────────────────
+departments:
+
+  finance:
+    display_name: "Finance Department"
+    layer: department
+    reports_to: cfo
+    division: commercial_finance
+    config: departments/finance/config.yaml
+    peers:                            # can consult these mid-query
+      - legal                         # for contract cost review
+      - procurement                   # for vendor spend alignment
+    escalates_to: cfo
+    escalation_threshold: 0.65        # confidence below this → escalate
+
+  hr:
+    display_name: "Human Resources"
+    layer: department
+    reports_to: cfo
+    division: commercial_finance
+    config: departments/hr/config.yaml
+    peers:
+      - legal                         # for employment law queries
+      - finance                       # for headcount cost queries
+    escalates_to: cfo
+    escalation_threshold: 0.65
+
+  legal:
+    display_name: "Legal Department"
+    layer: department
+    reports_to: cfo
+    division: commercial_finance
+    config: departments/legal/config.yaml
+    peers:
+      - finance                       # for contract value/cost
+      - hr                            # for employment matters
+      - procurement                   # for vendor contracts
+    escalates_to: cfo
+    escalation_threshold: 0.70        # legal needs higher confidence
+
+  procurement:
+    display_name: "Procurement Department"
+    layer: department
+    reports_to: cfo
+    division: commercial_finance
+    config: departments/procurement/config.yaml
+    peers:
+      - finance                       # for budget alignment
+      - legal                         # for contract review
+      - ops                           # for operational requirements
+    escalates_to: cfo
+    escalation_threshold: 0.65
+
+  sales:
+    display_name: "Sales Department"
+    layer: department
+    reports_to: coo
+    division: operations
+    config: departments/sales/config.yaml
+    peers:
+      - marketing                     # for campaign + lead alignment
+      - finance                       # for deal margin approval
+      - legal                         # for contract terms
+    escalates_to: coo
+    escalation_threshold: 0.60
+
+  marketing:
+    display_name: "Marketing Department"
+    layer: department
+    reports_to: coo
+    division: operations
+    config: departments/marketing/config.yaml
+    peers:
+      - sales                         # for pipeline + campaign alignment
+      - customer_success              # for NPS + retention insight
+    escalates_to: coo
+    escalation_threshold: 0.60
+
+  ops:
+    display_name: "Operations Department"
+    layer: department
+    reports_to: coo
+    division: operations
+    config: departments/ops/config.yaml
+    peers:
+      - it                            # for infrastructure/system queries
+      - procurement                   # for vendor/supply queries
+      - finance                       # for operational cost queries
+    escalates_to: coo
+    escalation_threshold: 0.65
+
+  it:
+    display_name: "Information Technology"
+    layer: department
+    reports_to: cto
+    division: technology
+    config: departments/it/config.yaml
+    peers:
+      - ops                           # for operational system queries
+      - rd                            # for tech stack alignment
+    escalates_to: cto
+    escalation_threshold: 0.65
+
+  rd:
+    display_name: "Research & Development"
+    layer: department
+    reports_to: cto
+    division: technology
+    config: departments/rd/config.yaml
+    peers:
+      - it                            # for infrastructure + tools
+      - marketing                     # for product-market alignment
+      - sales                         # for product feedback
+    escalates_to: cto
+    escalation_threshold: 0.70        # R&D needs higher confidence
+
+  customer_success:
+    display_name: "Customer Success"
+    layer: department
+    reports_to: coo
+    division: operations
+    config: departments/customer_success/config.yaml
+    peers:
+      - sales                         # for renewal + expansion
+      - marketing                     # for retention campaigns
+      - ops                           # for delivery/SLA issues
+    escalates_to: coo
+    escalation_threshold: 0.60
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTING RULES — role → max hierarchy level
+# ─────────────────────────────────────────────────────────────────────────────
+routing:
+  employee:
+    max_layer: department
+    scope: own_dept_only
+    peer_access: none
+
+  manager:
+    max_layer: department
+    scope: permitted_depts
+    peer_access: permitted_depts
+
+  dept_head:
+    max_layer: department
+    scope: own_division
+    peer_access: own_division
+    can_trigger_escalation: true
+
+  division_head:
+    max_layer: csuite
+    scope: own_division_full
+    peer_access: own_division_full
+
+  c_suite:
+    max_layer: csuite
+    scope: all_depts
+    peer_access: all_depts
+
+  ceo:
+    max_layer: strategic
+    scope: all
+    peer_access: all
+
+  admin:
+    max_layer: strategic
+    scope: all
+    peer_access: all

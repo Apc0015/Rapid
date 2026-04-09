@@ -1,0 +1,185 @@
+# governance/org_governance.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# ORGANIZATION GOVERNANCE LAYER
+# Applies to EVERY department. Cannot be overridden by any department config.
+# Department governance can only ADD restrictions, never remove these.
+# ─────────────────────────────────────────────────────────────────────────────
+
+organization:
+  name: "RAPID Enterprise"
+  governance_version: "1.0"
+  compliance_standards: [SOC2, GDPR, ISO27001]
+  last_reviewed: "2026-04-08"
+  reviewed_by: "Admin"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ABSOLUTE DATA RULES  —  zero exceptions, zero overrides
+# ─────────────────────────────────────────────────────────────────────────────
+absolute_rules:
+
+  data_firewall:
+    raw_rows_to_llm: NEVER
+    raw_chunks_to_llm: NEVER
+    raw_schema_to_llm: NEVER
+    always_nl_summary: true
+    summary_max_tokens: 600
+
+  sql_enforcement:
+    mode: read_only                   # sqlparse enforced — not just string check
+    forbidden_statements:
+      - INSERT
+      - UPDATE
+      - DELETE
+      - DROP
+      - TRUNCATE
+      - ALTER
+      - CREATE
+      - EXEC
+      - EXECUTE
+      - GRANT
+      - REVOKE
+      - xp_cmdshell
+      - sp_executesql
+
+  global_blocked_fields:             # no dept can ever expose these
+    - ssn
+    - national_id
+    - passport_number
+    - bank_account_number
+    - routing_number
+    - credit_card_number
+    - cvv
+    - individual_salary             # aggregates allowed, not individual
+    - raw_password
+    - password_hash
+    - auth_token
+    - session_token
+    - private_key
+    - medical_record
+    - biometric_data
+    - personal_email                # work email may be allowed per dept
+    - home_address
+    - date_of_birth
+
+  pii_auto_redact:                   # regex patterns — auto-scrubbed from ALL output
+    ssn:          "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+    card_number:  "\\b(?:\\d[ -]?){15,16}\\b"
+    iban:         "\\b[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}([A-Z0-9]?){0,16}\\b"
+    ip_address:   "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CROSS-DEPARTMENT SHARING
+# ─────────────────────────────────────────────────────────────────────────────
+cross_dept_sharing:
+  default: BLOCK                     # departments are isolated by default
+  allowed_only_via_mesh_bus: true    # sharing only through authorised mesh calls
+  requires_explicit_permission: true # user must have both depts in permitted_depts
+  nl_summary_only: true              # even when shared — summaries only
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROLE HIERARCHY  —  what each role is entitled to see
+# ─────────────────────────────────────────────────────────────────────────────
+role_entitlements:
+
+  employee:
+    scope: own_department_only
+    data_depth: aggregated_summary
+    can_see_individual_records: false
+    can_see_other_depts: false
+    can_escalate: false
+    response_depth: brief
+
+  manager:
+    scope: permitted_departments
+    data_depth: department_level_summary
+    can_see_individual_records: false
+    can_see_other_depts: true        # only permitted ones
+    can_escalate: true
+    response_depth: detailed
+
+  dept_head:
+    scope: own_division_departments
+    data_depth: division_level_summary
+    can_see_individual_records: false
+    can_see_other_depts: true        # own division only
+    can_escalate: true
+    response_depth: strategic
+
+  division_head:
+    scope: own_division_full
+    data_depth: full_division_aggregates
+    can_see_individual_records: false
+    can_see_other_depts: true        # own division all depts
+    can_escalate: true
+    response_depth: executive
+
+  c_suite:
+    scope: all_departments
+    data_depth: company_level_aggregates
+    can_see_individual_records: false
+    can_see_other_depts: true
+    can_escalate: true
+    response_depth: board_level
+
+  ceo:
+    scope: all_departments
+    data_depth: company_level_aggregates
+    can_see_individual_records: false
+    can_see_other_depts: true
+    can_escalate: true
+    response_depth: board_level
+
+  admin:
+    scope: all_departments
+    data_depth: company_level_aggregates
+    can_see_individual_records: false
+    can_see_other_depts: true
+    can_escalate: true
+    response_depth: board_level
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AGGREGATION MINIMUMS
+# ─────────────────────────────────────────────────────────────────────────────
+aggregation:
+  minimum_group_size: 5              # never show data for groups < 5 people/entities
+  salary_aggregation_minimum: 10     # payroll data: minimum 10 employees in group
+  enforce_globally: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUDIT
+# ─────────────────────────────────────────────────────────────────────────────
+audit:
+  log_all_queries: true
+  log_all_governance_blocks: true
+  log_cross_dept_requests: true
+  log_privacy_right_triggers: true
+  retention_days: 365
+  log_path: "data/audit.log"
+  format: json_lines
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SENSITIVITY CLASSIFICATION (org-wide standard)
+# ─────────────────────────────────────────────────────────────────────────────
+sensitivity_levels:
+  public:
+    description: "Can be shared openly — no restrictions"
+    label: "PUBLIC"
+
+  internal:
+    description: "Employees only — not for external parties"
+    label: "INTERNAL"
+
+  confidential:
+    description: "Specific roles only — need-to-know basis"
+    label: "CONFIDENTIAL"
+    minimum_role: manager
+
+  restricted:
+    description: "C-Suite and above only"
+    label: "RESTRICTED"
+    minimum_role: c_suite
+
+  privileged:
+    description: "CEO/Board/Legal privilege — never through AI system"
+    label: "PRIVILEGED"
+    allowed_through_ai: false        # hard block — must go through human
