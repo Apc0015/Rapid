@@ -1,34 +1,76 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
-*.egg
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
 .venv/
+.venv-*/
 venv/
+ENV/
+env/
 
-# Environment
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
 .env
-.env.*
+.env.local
+.env.*.local
 
-# Data & uploads (may contain sensitive documents)
+# ── Runtime data (never commit) ───────────────────────────────────────────────
+# Blanket-ignore the runtime data dir: it holds users.yaml (password hashes),
+# SQLite DBs, vector indexes, and ingested documents. None of it belongs in git.
 data/
-uploads/
+data/db/
+data/faiss/
+data/chroma/
+data/backups/
+data/csv_exports/
+data/documents/projects/
+data/user_registry.json
+data/dept_db_config.json
+data/dept_rag_config.json
+data/agent_requests.db
+logs/
+*.log
+*.tmp
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# ── SQLite artefacts ──────────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
 
-# OS
+# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Secrets
-*.pem
-*.key
+# ── IDE / tools ───────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude/
+.code-review-graph/
+.agent.md
 
-# Redis
-dump.rdb
+# ── Docker ────────────────────────────────────────────────────────────────────
+*.tar
+# Testing doc moved to docs/ — ignore the root copy
+DOCKER_COMPOSE_TESTING.md
+
+# ── Node (if any frontend build tools are added) ─────────────────────────────
+node_modules/

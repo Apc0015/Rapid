@@ -1,0 +1,999 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# RAPID — Company Constitution v1.0
+# Supreme governance document. Loaded once at startup. No agent can override it.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Article 1: Access Control ─────────────────────────────────────────────────
+# Which user roles can query which departments.
+access_control:
+  admin:
+    departments: [finance, legal, hr, sales, marketing, ops, it, procurement, rd, customer_success]
+    level: full
+  manager:
+    departments: [finance, legal, hr, sales, marketing, ops, it, procurement, rd, customer_success]
+    level: manager
+  employee:
+    departments: [hr, it]
+    level: standard
+  sales_rep:
+    departments: [sales, marketing, hr, it, customer_success]
+    level: standard
+  finance_analyst:
+    departments: [finance, hr, it, procurement]
+    level: standard
+  legal_counsel:
+    departments: [legal, hr, it]
+    level: standard
+
+# ── Article 2: Column Permissions ─────────────────────────────────────────────
+# ALLOW       — all roles with department access
+# ANONYMIZE   — transform before leaving (aggregate numbers, hash PII)
+# BLOCK       — remove entirely for all non-admin roles
+# ALLOW_MANAGER — only users with role=manager or admin
+# ALLOW_EXEC  — only users with role=exec or admin
+column_permissions:
+  hr:
+    employees:
+      name:               ALLOW
+      department:         ALLOW
+      role:               ALLOW
+      hire_date:          ALLOW
+      salary:             ANONYMIZE        # force team-level aggregate, never individual
+      performance_score:  BLOCK            # blocked entirely
+      disciplinary_flag:  BLOCK            # blocked entirely
+    benefits_enrollment:
+      employee_id:        ALLOW
+      plan_name:          ALLOW
+      coverage_level:     ALLOW
+      monthly_premium:    ANONYMIZE
+    leave_records:
+      employee_id:        ALLOW
+      leave_type:         ALLOW
+      start_date:         ALLOW
+      end_date:           ALLOW
+      approved:           ALLOW
+    org_structure:
+      department:         ALLOW
+      manager_name:       ALLOW
+      headcount:          ALLOW
+      budget_headcount:   ALLOW_MANAGER
+    recruitment_pipeline:
+      req_id:             ALLOW
+      job_title:          ALLOW
+      department:         ALLOW
+      level:              ALLOW
+      recruiter:          ALLOW
+      source:             ALLOW
+      applicants:         ALLOW_MANAGER
+      phone_screens:      ALLOW_MANAGER
+      interviews:         ALLOW_MANAGER
+      offers:             ALLOW_MANAGER
+      hires:              ALLOW
+      time_to_fill_days:  ALLOW
+      cost_per_hire:      ALLOW_MANAGER
+      opened_date:        ALLOW
+      closed_date:        ALLOW
+      status:             ALLOW
+    performance_reviews:
+      review_id:          ALLOW
+      employee_id:        ALLOW
+      period:             ALLOW
+      reviewer_id:        ALLOW_MANAGER
+      overall_rating:     ALLOW_MANAGER
+      goal_achievement:   ALLOW_MANAGER
+      competency_score:   ALLOW_MANAGER
+      development_plan:   ALLOW_MANAGER
+      promotion_flag:     BLOCK
+      pip_flag:           BLOCK
+      salary_adjustment_pct: BLOCK
+      review_date:        ALLOW
+    succession_planning:
+      succession_id:      ALLOW
+      employee_id:        ALLOW_MANAGER
+      target_role:        ALLOW_MANAGER
+      readiness:          ALLOW_MANAGER
+      time_horizon:       ALLOW_MANAGER
+      performance_band:   BLOCK
+      potential_band:     BLOCK
+      retention_risk:     BLOCK
+      sponsor:            ALLOW_MANAGER
+      last_reviewed:      ALLOW
+    dei_metrics:
+      metric_id:          ALLOW
+      period:             ALLOW
+      dimension:          ALLOW
+      group_label:        ALLOW
+      headcount:          ALLOW
+      pct_total:          ALLOW
+      management_pct:     ALLOW
+      avg_pay:            ALLOW_MANAGER
+      pay_gap_pct:        ALLOW_MANAGER
+      promotion_rate:     ALLOW
+      attrition_rate:     ALLOW
+    training_records:
+      training_id:        ALLOW
+      employee_id:        ALLOW
+      course_name:        ALLOW
+      provider:           ALLOW
+      category:           ALLOW
+      completion_date:    ALLOW
+      score:              ALLOW_MANAGER
+      passed:             ALLOW
+      hours:              ALLOW
+      cost:               ALLOW_MANAGER
+      certificate_expiry: ALLOW
+    hr_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  finance:
+    financials:
+      revenue:            ALLOW
+      gross_margin:       ALLOW
+      net_income:         ALLOW
+      operating_expenses: ALLOW
+      salary_budget:      ALLOW_MANAGER
+      executive_comp:     BLOCK
+      investor_terms:     BLOCK
+    orders:
+      order_id:           ALLOW
+      customer_id:        ALLOW
+      amount:             ALLOW
+      status:             ALLOW
+      created_at:         ALLOW
+    invoices:
+      invoice_id:         ALLOW
+      vendor:             ALLOW
+      amount:             ALLOW
+      due_date:           ALLOW
+      paid:               ALLOW
+    budget_allocations:
+      department:         ALLOW
+      allocated:          ALLOW
+      spent:              ALLOW
+      remaining:          ALLOW
+      variance:           ALLOW_MANAGER
+    expense_claims:
+      claim_id:           ALLOW
+      employee_id:        ALLOW
+      category:           ALLOW
+      amount:             ALLOW_MANAGER
+      submitted_date:     ALLOW
+      status:             ALLOW
+      approved_by:        ALLOW
+      notes:              ALLOW_MANAGER
+    accounts_receivable:
+      ar_id:              ALLOW
+      customer_id:        ALLOW
+      invoice_number:     ALLOW
+      invoice_date:       ALLOW
+      due_date:           ALLOW
+      amount:             ALLOW_MANAGER
+      paid_amount:        ALLOW_MANAGER
+      outstanding:        ALLOW_MANAGER
+      aging_bucket:       ALLOW
+      days_overdue:       ALLOW
+      collection_status:  ALLOW
+      dispute_flag:       ALLOW_MANAGER
+      account_manager:    ALLOW
+    cash_flow_statement:
+      cf_id:              ALLOW
+      period:             ALLOW
+      operating_activities: ALLOW_MANAGER
+      investing_activities: ALLOW_MANAGER
+      financing_activities: ALLOW_MANAGER
+      net_change:         ALLOW_MANAGER
+      opening_balance:    ALLOW_MANAGER
+      closing_balance:    ALLOW_MANAGER
+      capex:              ALLOW_MANAGER
+      free_cash_flow:     ALLOW_MANAGER
+      burn_rate:          ALLOW_MANAGER
+      runway_months:      ALLOW_MANAGER
+    financial_close_log:
+      close_id:           ALLOW
+      period:             ALLOW
+      close_type:         ALLOW
+      target_date:        ALLOW
+      actual_date:        ALLOW
+      days_to_close:      ALLOW
+      status:             ALLOW
+      blockers:           ALLOW_MANAGER
+      preparer:           ALLOW
+      reviewer:           ALLOW
+      approved_by:        ALLOW
+    tax_compliance:
+      tax_id:             ALLOW
+      jurisdiction:       ALLOW
+      tax_type:           ALLOW
+      period:             ALLOW
+      due_date:           ALLOW
+      filed_date:         ALLOW
+      taxable_amount:     BLOCK
+      tax_rate_pct:       ALLOW_MANAGER
+      tax_payable:        BLOCK
+      payment_date:       ALLOW
+      status:             ALLOW
+      notes:              ALLOW_MANAGER
+    finance_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  legal:
+    cases:
+      case_id:            ALLOW
+      case_type:          ALLOW
+      status:             ALLOW
+      opened_date:        ALLOW
+      resolution:         ALLOW
+      litigation_details: BLOCK            # attorney-client privilege
+      settlement_amount:  BLOCK
+    contracts_db:
+      contract_id:        ALLOW
+      vendor:             ALLOW
+      type:               ALLOW
+      effective_date:     ALLOW
+      expiry_date:        ALLOW
+      value:              ALLOW_MANAGER
+      terms:              BLOCK
+    compliance_records:
+      regulation:         ALLOW
+      status:             ALLOW
+      last_review:        ALLOW
+      next_review:        ALLOW
+      notes:              ALLOW
+    legal_spend:
+      spend_id:           ALLOW
+      matter_id:          ALLOW
+      matter_name:        ALLOW
+      matter_type:        ALLOW
+      law_firm:           ALLOW_MANAGER
+      invoice_date:       ALLOW
+      hours_billed:       ALLOW_MANAGER
+      hourly_rate:        BLOCK
+      total_amount:       ALLOW_MANAGER
+      budget:             ALLOW_MANAGER
+      variance:           ALLOW_MANAGER
+      cost_center:        ALLOW
+      approved_by:        ALLOW
+    ip_portfolio:
+      portfolio_id:       ALLOW
+      ip_type:            ALLOW
+      title:              ALLOW
+      inventor_id:        ALLOW
+      filing_date:        ALLOW
+      grant_date:         ALLOW
+      expiry_date:        ALLOW
+      jurisdiction:       ALLOW
+      status:             ALLOW
+      licensed:           ALLOW
+      licensing_revenue:  ALLOW_MANAGER
+      maintenance_cost:   ALLOW_MANAGER
+      commercial_value:   BLOCK
+    regulatory_tracker:
+      tracker_id:         ALLOW
+      regulation:         ALLOW
+      jurisdiction:       ALLOW
+      effective_date:     ALLOW
+      category:           ALLOW
+      impact_level:       ALLOW
+      compliance_owner:   ALLOW
+      current_status:     ALLOW
+      gap_identified:     ALLOW_MANAGER
+      remediation_date:   ALLOW
+      notes:              ALLOW_MANAGER
+    legal_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  sales:
+    customers:
+      customer_id:        ALLOW
+      company_name:       ALLOW
+      industry:           ALLOW
+      region:             ALLOW
+      contact_email:      ANONYMIZE        # GDPR — anonymize PII
+      health_score:       ALLOW_MANAGER
+    deals:
+      deal_id:            ALLOW
+      customer_id:        ALLOW
+      stage:              ALLOW
+      value:              ALLOW
+      close_date:         ALLOW
+      owner:              ALLOW
+    sales_pipeline:
+      stage:              ALLOW
+      count:              ALLOW
+      total_value:        ALLOW
+      avg_deal_size:      ALLOW
+    customer_interactions:
+      interaction_id:     ALLOW
+      customer_id:        ALLOW
+      type:               ALLOW
+      date:               ALLOW
+      outcome:            ALLOW
+    sales_activities:
+      activity_id:        ALLOW
+      rep_id:             ALLOW
+      customer_id:        ALLOW
+      deal_id:            ALLOW
+      activity_type:      ALLOW
+      date:               ALLOW
+      outcome:            ALLOW
+      duration_mins:      ALLOW
+      notes:              ALLOW_MANAGER
+    quota_attainment:
+      attainment_id:      ALLOW
+      rep_id:             ALLOW
+      rep_name:           ALLOW
+      period:             ALLOW
+      quota:              ALLOW_MANAGER
+      booked_arr:         ALLOW_MANAGER
+      attainment_pct:     ALLOW
+      rank:               ALLOW
+      deals_won:          ALLOW
+      avg_deal_size:      ALLOW
+      pipeline_coverage:  ALLOW_MANAGER
+      ramp_status:        ALLOW
+    sales_forecast:
+      forecast_id:        ALLOW
+      period:             ALLOW
+      rep_id:             ALLOW
+      forecast_category:  ALLOW
+      amount:             ALLOW_MANAGER
+      deals_count:        ALLOW
+      submitted_date:     ALLOW
+      manager_adjustment: BLOCK
+      final_forecast:     ALLOW_MANAGER
+      accuracy_pct:       ALLOW
+    sales_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  marketing:
+    ad_spend:
+      channel:            ALLOW
+      spend:              ALLOW
+      period:             ALLOW
+      campaign_id:        ALLOW
+    campaign_analytics:
+      campaign_id:        ALLOW
+      name:               ALLOW
+      impressions:        ALLOW
+      clicks:             ALLOW
+      conversions:        ALLOW
+      ctr:                ALLOW
+      roas:               ALLOW
+    lead_data:
+      lead_id:            ALLOW
+      source:             ALLOW
+      status:             ALLOW
+      created_at:         ALLOW
+      contact_email:      ANONYMIZE
+    channel_performance:
+      channel:            ALLOW
+      leads:              ALLOW
+      spend:              ALLOW
+      cpl:                ALLOW
+    email_campaigns:
+      email_id:           ALLOW
+      campaign_name:      ALLOW
+      send_date:          ALLOW
+      segment:            ALLOW
+      sends:              ALLOW
+      opens:              ALLOW
+      open_rate:          ALLOW
+      clicks:             ALLOW
+      ctr:                ALLOW
+      unsubscribes:       ALLOW
+      bounce_rate:        ALLOW
+      conversions:        ALLOW
+      revenue_attributed: ALLOW_MANAGER
+      status:             ALLOW
+    brand_sentiment:
+      sentiment_id:       ALLOW
+      period:             ALLOW
+      channel:            ALLOW
+      positive_pct:       ALLOW
+      neutral_pct:        ALLOW
+      negative_pct:       ALLOW
+      mentions:           ALLOW
+      share_of_voice:     ALLOW
+      nps:                ALLOW
+      brand_awareness_pct: ALLOW
+      notes:              ALLOW_MANAGER
+    web_analytics:
+      analytics_id:       ALLOW
+      date:               ALLOW
+      sessions:           ALLOW
+      users:              ALLOW
+      new_users:          ALLOW
+      bounce_rate:        ALLOW
+      avg_session_duration: ALLOW
+      pages_per_session:  ALLOW
+      conversions:        ALLOW
+      conversion_rate:    ALLOW
+      top_landing_page:   ALLOW
+      source:             ALLOW
+      medium:             ALLOW
+    marketing_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  ops:
+    operations:
+      process_id:         ALLOW
+      name:               ALLOW
+      owner:              ALLOW
+      status:             ALLOW
+    logistics:
+      shipment_id:        ALLOW
+      origin:             ALLOW
+      destination:        ALLOW
+      status:             ALLOW
+      eta:                ALLOW
+    kpis:
+      metric:             ALLOW
+      value:              ALLOW
+      target:             ALLOW
+      period:             ALLOW
+      status:             ALLOW
+    sla_records:
+      service:            ALLOW
+      target_uptime:      ALLOW
+      actual_uptime:      ALLOW
+      breaches:           ALLOW
+      penalty_clause:     BLOCK
+    vendor_contracts:
+      vendor:             ALLOW
+      service:            ALLOW
+      start_date:         ALLOW
+      end_date:           ALLOW
+      pricing_terms:      ALLOW_MANAGER
+    production_metrics:
+      metric_id:          ALLOW
+      date:               ALLOW
+      line_id:            ALLOW
+      shift:              ALLOW
+      planned_units:      ALLOW
+      actual_units:       ALLOW
+      yield_pct:          ALLOW
+      downtime_mins:      ALLOW
+      oee:                ALLOW
+      scrap_units:        ALLOW
+      cycle_time_secs:    ALLOW
+      changeover_mins:    ALLOW
+      operator_id:        ALLOW_MANAGER
+    inventory:
+      sku_id:             ALLOW
+      product_name:       ALLOW
+      category:           ALLOW
+      warehouse:          ALLOW
+      quantity_on_hand:   ALLOW
+      reorder_point:      ALLOW
+      reorder_qty:        ALLOW
+      unit_cost:          ALLOW_MANAGER
+      total_value:        ALLOW_MANAGER
+      lead_time_days:     ALLOW
+      supplier_id:        ALLOW
+      last_count_date:    ALLOW
+      expiry_date:        ALLOW
+      status:             ALLOW
+    quality_control:
+      qc_id:              ALLOW
+      date:               ALLOW
+      product:            ALLOW
+      batch_id:           ALLOW
+      inspector:          ALLOW
+      units_inspected:    ALLOW
+      units_passed:       ALLOW
+      units_failed:       ALLOW
+      defect_type:        ALLOW
+      defect_ppm:         ALLOW
+      cpk:                ALLOW
+      action_taken:       ALLOW
+      disposition:        ALLOW
+      line_id:            ALLOW
+    facility_metrics:
+      facility_id:        ALLOW
+      name:               ALLOW
+      location:           ALLOW
+      type:               ALLOW
+      size_sqft:          ALLOW
+      occupancy_pct:      ALLOW
+      energy_kwh:         ALLOW
+      energy_cost:        ALLOW_MANAGER
+      maintenance_spend:  ALLOW_MANAGER
+      incidents:          ALLOW
+      last_inspection:    ALLOW
+      next_inspection:    ALLOW
+      status:             ALLOW
+    ops_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  it:
+    systems:
+      system_id:          ALLOW
+      name:               ALLOW
+      status:             ALLOW
+      owner:              ALLOW
+    access_requests:
+      request_id:         ALLOW
+      user_id:            ALLOW
+      system_name:        ALLOW
+      request_status:     ALLOW
+      approval_date:      ALLOW
+      approver:           ALLOW
+      credentials:        BLOCK            # blocked entirely
+    software_licenses:
+      software:           ALLOW
+      seats_total:        ALLOW
+      seats_used:         ALLOW
+      expiry:             ALLOW
+      cost_per_seat:      ALLOW_MANAGER
+    infrastructure_status:
+      component:          ALLOW
+      status:             ALLOW
+      last_checked:       ALLOW
+      uptime_pct:         ALLOW
+    it_incidents:
+      incident_id:        ALLOW
+      title:              ALLOW
+      category:           ALLOW
+      priority:           ALLOW
+      status:             ALLOW
+      reported_by:        ALLOW
+      assigned_to:        ALLOW
+      created_date:       ALLOW
+      resolved_date:      ALLOW
+      mttr_hours:         ALLOW
+      sla_breach:         ALLOW
+      root_cause:         ALLOW_MANAGER
+      workaround:         ALLOW
+      affected_system:    ALLOW
+      impact_users:       ALLOW
+    it_assets:
+      asset_id:           ALLOW
+      asset_tag:          ALLOW
+      asset_type:         ALLOW
+      make:               ALLOW
+      model:              ALLOW
+      serial_number:      ALLOW_MANAGER
+      assigned_to:        ALLOW
+      department:         ALLOW
+      location:           ALLOW
+      purchase_date:      ALLOW
+      warranty_expiry:    ALLOW
+      asset_value:        ALLOW_MANAGER
+      status:             ALLOW
+      os:                 ALLOW
+      notes:              ALLOW_MANAGER
+    security_events:
+      event_id:           ALLOW
+      event_type:         ALLOW
+      severity:           ALLOW
+      source_ip:          BLOCK
+      target_system:      ALLOW
+      event_date:         ALLOW
+      detected_by:        ALLOW
+      status:             ALLOW
+      remediated:         ALLOW
+      false_positive:     ALLOW
+      analyst:            ALLOW
+      notes:              ALLOW_MANAGER
+    change_requests:
+      cr_id:              ALLOW
+      title:              ALLOW
+      change_type:        ALLOW
+      priority:           ALLOW
+      status:             ALLOW
+      requester:          ALLOW
+      assigned_to:        ALLOW
+      environment:        ALLOW
+      planned_date:       ALLOW
+      actual_date:        ALLOW
+      rollback_plan:      ALLOW_MANAGER
+      approval_status:    ALLOW
+      approver:           ALLOW
+      notes:              ALLOW_MANAGER
+    it_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  procurement:
+    purchase_orders:
+      po_id:              ALLOW
+      supplier_id:        ALLOW
+      department:         ALLOW
+      amount:             ALLOW
+      status:             ALLOW
+      raised_date:        ALLOW
+      approved_by:        ALLOW
+      delivery_date:      ALLOW
+      category:           ALLOW
+    suppliers:
+      supplier_id:        ALLOW
+      name:               ALLOW
+      category:           ALLOW
+      country:            ALLOW
+      contact_email:      ANONYMIZE        # GDPR — anonymise supplier contact
+      status:             ALLOW
+      rating:             ALLOW
+      spend_ytd:          ALLOW_MANAGER
+      on_preferred_list:  ALLOW
+    rfq_records:
+      rfq_id:             ALLOW
+      item:               ALLOW
+      suppliers_invited:  ALLOW
+      responses_received: ALLOW
+      awarded_to:         ALLOW
+      award_value:        ALLOW_MANAGER
+      raised_date:        ALLOW
+      status:             ALLOW
+    vendor_evaluations:
+      eval_id:            ALLOW
+      supplier_id:        ALLOW
+      period:             ALLOW
+      quality_score:      ALLOW
+      delivery_score:     ALLOW
+      price_score:        ALLOW_MANAGER
+      overall_score:      ALLOW
+      reviewed_by:        ALLOW
+    spend_analytics:
+      spend_id:           ALLOW
+      period:             ALLOW
+      department:         ALLOW
+      category:           ALLOW
+      sub_category:       ALLOW
+      supplier_id:        ALLOW
+      amount:             ALLOW_MANAGER
+      po_count:           ALLOW
+      invoice_count:      ALLOW
+      contract_coverage:  ALLOW
+      maverick_pct:       ALLOW
+      savings_achieved:   ALLOW_MANAGER
+    sourcing_events:
+      sourcing_id:        ALLOW
+      category:           ALLOW
+      description:        ALLOW
+      sourcing_type:      ALLOW
+      status:             ALLOW
+      start_date:         ALLOW
+      end_date:           ALLOW
+      baseline_spend:     ALLOW_MANAGER
+      target_savings:     ALLOW_MANAGER
+      achieved_savings:   ALLOW_MANAGER
+      savings_pct:        ALLOW
+      awarded_supplier:   ALLOW
+      lead_buyer:         ALLOW
+    supplier_contracts:
+      contract_id:        ALLOW
+      supplier_id:        ALLOW
+      contract_type:      ALLOW
+      start_date:         ALLOW
+      end_date:           ALLOW
+      value:              ALLOW_MANAGER
+      payment_terms:      ALLOW
+      sla_terms:          ALLOW
+      auto_renewal:       ALLOW
+      risk_level:         ALLOW
+      compliance_status:  ALLOW
+      responsible_buyer:  ALLOW
+      notes:              ALLOW_MANAGER
+    procurement_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  rd:
+    rd_projects:
+      project_id:         ALLOW
+      name:               ALLOW
+      lead:               ALLOW
+      department:         ALLOW
+      status:             ALLOW
+      start_date:         ALLOW
+      target_date:        ALLOW
+      budget:             ALLOW_MANAGER
+      spend_to_date:      ALLOW_MANAGER
+      priority:           ALLOW
+    experiments:
+      exp_id:             ALLOW
+      project_id:         ALLOW
+      name:               ALLOW
+      hypothesis:         ALLOW
+      status:             ALLOW
+      outcome:            ALLOW
+      started_date:       ALLOW
+      completed_date:     ALLOW
+    ip_registry:
+      ip_id:              ALLOW
+      title:              ALLOW
+      type:               ALLOW
+      project_id:         ALLOW
+      filed_date:         ALLOW
+      status:             ALLOW
+      jurisdiction:       ALLOW
+      owner:              ALLOW
+    research_budgets:
+      id:                 ALLOW
+      department:         ALLOW
+      period:             ALLOW
+      allocated:          ALLOW_MANAGER
+      spent:              ALLOW_MANAGER
+      remaining:          ALLOW_MANAGER
+      category:           ALLOW
+    innovation_pipeline:
+      idea_id:            ALLOW
+      title:              ALLOW
+      submitter_id:       ALLOW
+      department:         ALLOW
+      submission_date:    ALLOW
+      stage:              ALLOW
+      feasibility_score:  ALLOW
+      market_score:       ALLOW
+      strategic_fit:      ALLOW_MANAGER
+      npv_estimate:       BLOCK
+      status:             ALLOW
+      assigned_team:      ALLOW
+      target_launch:      ALLOW
+    rd_talent:
+      talent_id:          ALLOW
+      employee_id:        ALLOW
+      specialization:     ALLOW
+      degree:             ALLOW
+      publications:       ALLOW
+      patents_filed:      ALLOW
+      patents_granted:    ALLOW
+      skills:             ALLOW
+      certifications:     ALLOW
+      h_index:            ALLOW_MANAGER
+      external_grants:    ALLOW_MANAGER
+    rd_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+  customer_success:
+    cs_accounts:
+      account_id:         ALLOW
+      company_name:       ALLOW
+      csm_owner:          ALLOW
+      health_score:       ALLOW
+      arr:                ALLOW_MANAGER
+      tier:               ALLOW
+      onboarded_date:     ALLOW
+      renewal_date:       ALLOW
+      risk_flag:          ALLOW
+    nps_scores:
+      id:                 ALLOW
+      account_id:         ALLOW
+      score:              ALLOW
+      category:           ALLOW
+      submitted_date:     ALLOW
+      verbatim:           ANONYMIZE        # GDPR — paraphrase, do not quote directly
+    support_tickets:
+      ticket_id:          ALLOW
+      account_id:         ALLOW
+      subject:            ALLOW
+      priority:           ALLOW
+      status:             ALLOW
+      created_date:       ALLOW
+      resolved_date:      ALLOW
+      csat_score:         ALLOW
+    renewal_pipeline:
+      renewal_id:         ALLOW
+      account_id:         ALLOW
+      arr:                ALLOW_MANAGER
+      renewal_date:       ALLOW
+      stage:              ALLOW
+      probability:        ALLOW_MANAGER
+      csm_owner:          ALLOW
+      notes:              ALLOW_MANAGER
+    churn_log:
+      churn_id:           ALLOW
+      account_id:         ALLOW
+      churn_date:         ALLOW
+      arr_lost:           ALLOW_MANAGER
+      churn_reason:       ALLOW
+      churn_type:         ALLOW
+      warning_days:       ALLOW
+      health_at_churn:    ALLOW
+      csm_owner:          ALLOW
+      competitor:         ALLOW_MANAGER
+      feedback:           ANONYMIZE
+      preventable:        ALLOW
+    product_usage:
+      usage_id:           ALLOW
+      account_id:         ALLOW
+      period:             ALLOW
+      dau:                ALLOW
+      mau:                ALLOW
+      dau_mau_ratio:      ALLOW
+      features_used:      ALLOW
+      core_adoption_pct:  ALLOW
+      last_active:        ALLOW
+      logins:             ALLOW
+      api_calls:          ALLOW
+      storage_gb:         ALLOW
+      top_feature:        ALLOW
+      session_duration_mins: ALLOW
+    onboarding_tracker:
+      onboarding_id:      ALLOW
+      account_id:         ALLOW
+      csm_owner:          ALLOW
+      kickoff_date:       ALLOW
+      go_live_date:       ALLOW
+      actual_go_live:     ALLOW
+      days_to_go_live:    ALLOW
+      milestones_total:   ALLOW
+      milestones_done:    ALLOW
+      blockers:           ALLOW_MANAGER
+      health_at_go_live:  ALLOW
+      first_value_date:   ALLOW
+      time_to_value_days: ALLOW
+      status:             ALLOW
+    expansion_revenue:
+      expansion_id:       ALLOW
+      account_id:         ALLOW
+      csm_owner:          ALLOW
+      opportunity_type:   ALLOW
+      product:            ALLOW
+      arr_current:        ALLOW_MANAGER
+      expansion_arr:      ALLOW_MANAGER
+      total_arr:          ALLOW_MANAGER
+      close_date:         ALLOW
+      stage:              ALLOW
+      probability:        ALLOW_MANAGER
+      notes:              ALLOW_MANAGER
+    cs_kpis:
+      kpi_id:             ALLOW
+      period:             ALLOW
+      kpi_name:           ALLOW
+      current_value:      ALLOW
+      target_value:       ALLOW
+      unit:               ALLOW
+      trend:              ALLOW
+      status:             ALLOW
+      category:           ALLOW
+
+# ── Article 3: Department Boundaries ─────────────────────────────────────────
+# Hard boundaries — Finance cannot query Legal tables and vice versa.
+department_boundaries:
+  finance:           [financials, orders, invoices, budget_allocations, expense_claims, accounts_receivable, cash_flow_statement, financial_close_log, tax_compliance, finance_kpis]
+  legal:             [cases, contracts_db, compliance_records, regulatory_filings, legal_spend, ip_portfolio, regulatory_tracker, legal_kpis]
+  hr:                [employees, benefits_enrollment, leave_records, org_structure, recruitment_pipeline, performance_reviews, succession_planning, dei_metrics, training_records, hr_kpis]
+  sales:             [customers, deals, sales_pipeline, customer_interactions, sales_activities, quota_attainment, sales_forecast, sales_kpis]
+  marketing:         [ad_spend, campaign_analytics, lead_data, channel_performance, email_campaigns, brand_sentiment, web_analytics, marketing_kpis]
+  ops:               [operations, logistics, kpis, sla_records, vendor_contracts, production_metrics, inventory, quality_control, facility_metrics, ops_kpis]
+  it:                [systems, access_requests, software_licenses, infrastructure_status, it_incidents, it_assets, security_events, change_requests, it_kpis]
+  procurement:       [purchase_orders, suppliers, rfq_records, vendor_evaluations, spend_analytics, sourcing_events, supplier_contracts, procurement_kpis]
+  rd:                [rd_projects, experiments, ip_registry, research_budgets, innovation_pipeline, rd_talent, rd_kpis]
+  customer_success:  [cs_accounts, nps_scores, support_tickets, renewal_pipeline, churn_log, product_usage, onboarding_tracker, expansion_revenue, cs_kpis]
+
+# ── Article 4: Aggregation Rules ──────────────────────────────────────────────
+# Data that must always be aggregated — individual rows blocked.
+aggregation_required:
+  - table: employees
+    column: salary
+    method: team_average           # GROUP BY department → AVG(salary)
+  - table: benefits_enrollment
+    column: monthly_premium
+    method: average
+  - table: lead_data
+    column: contact_email
+    method: hash_email
+  - table: customers
+    column: contact_email
+    method: hash_email
+  - table: suppliers
+    column: contact_email
+    method: hash_email
+  - table: performance_reviews
+    column: overall_rating
+    method: team_average
+  - table: dei_metrics
+    column: avg_pay
+    method: group_average
+  - table: churn_log
+    column: feedback
+    method: paraphrase
+  - table: nps_scores
+    column: verbatim
+    method: paraphrase
+
+# ── Article 5: Audit Requirements ─────────────────────────────────────────────
+audit:
+  retention_years: 7
+  alert_on_block_rate_threshold: 0.20   # alert if >20% of queries trigger BLOCKs
+  always_log:
+    - query
+    - governance_action
+    - auth_failure
+    - dept_boundary_violation
+    - confidence_below_threshold
+
+# ── Article 6: Agent Instructions ────────────────────────────────────────────
+agent_instructions:
+  prohibited_actions:
+    - expose_raw_data
+    - expose_column_names
+    - expose_schema
+    - generate_insert_update_delete
+    - bypass_governance
+  required_caveats:
+    - salary_data_is_aggregated
+    - blocked_data_not_shown
+    - confidence_warning_below_065
+  escalation_triggers:
+    - auth_failure
+    - security_exception
+    - dept_boundary_violation
+    - no_agent_confidence_above_050
+
+# ── Article 7: Amendment Process ──────────────────────────────────────────────
+amendment:
+  requires: human_administrator_approval
+  takes_effect: next_system_restart
+  all_changes_are_audit_logged: true

@@ -1,0 +1,51 @@
+# Version control
+.git
+.gitignore
+
+# Python artefacts
+.venv
+.venv-*/
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Secrets & local config
+.env
+.env.local
+.env.*.local
+
+# Runtime data (mounted as Docker volumes at run-time)
+data/db/
+data/documents/
+data/faiss/
+data/chroma/
+data/backups/
+data/csv_exports/
+logs/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.tmp
+
+# Dev tooling
+.DS_Store
+Thumbs.db
+.claude/
+.code-review-graph/
+.agent.md
+node_modules/
+
+# Test artefacts
+tests/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local docs
+DOCKER_COMPOSE_TESTING.md

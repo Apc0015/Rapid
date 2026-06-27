@@ -1,1 +1,43 @@
--r rapid/requirements.txt
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+gunicorn>=22.0.0
+pydantic>=2.7.0
+slowapi>=0.1.9
+python-multipart>=0.0.9
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# ── HTTP / async ──────────────────────────────────────────────────────────────
+aiohttp>=3.9.0
+httpx>=0.27.0
+
+# ── Config / env ─────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# ── Vector search (FAISS — default backend) ───────────────────────────────────
+faiss-cpu>=1.8.0
+numpy>=1.26.0
+rank-bm25>=0.2.2
+
+# ── Document parsing ──────────────────────────────────────────────────────────
+pypdf>=4.2.0
+python-docx>=1.1.0
+
+# ── Phase 3: Qdrant (optional — enable with USE_QDRANT=true) ─────────────────
+qdrant-client>=1.9.0
+
+# ── Phase 3: PostgreSQL (optional — enable with DATABASE_URL=postgresql://...)
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+
+# ── Phase 3: Redis (optional — enable with REDIS_URL=redis://...) ─────────────
+redis>=5.0.0
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0

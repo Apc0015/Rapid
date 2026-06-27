@@ -1,0 +1,96 @@
+version: '3.8'
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RAPID — Production Docker Compose
+#
+#  Quick start:
+#    export JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+#    docker-compose up -d
+#
+#  Services:
+#    nginx   — serves the frontend (port 80) and proxies /api/* → rapid:8000
+#    rapid   — FastAPI backend (internal port 8000, not exposed externally)
+#    ollama  — local LLM inference (optional, port 11434)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── nginx: frontend + reverse proxy ───────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      rapid:
+        condition: service_healthy
+    networks:
+      - rapid-network
+    restart: unless-stopped
+
+  # ── rapid: FastAPI backend ─────────────────────────────────────────────────
+  rapid:
+    build: .
+    # Not exposed directly — all traffic routed through nginx
+    expose:
+      - "8000"
+    environment:
+      RAPID_ENV: production
+      # JWT_SECRET_KEY has no default — set it before running:
+      #   export JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set — see README.md}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///data/db/rapid.db}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:80}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AUDIT_LOG_PATH: ${AUDIT_LOG_PATH:-data/audit.log}
+    volumes:
+      - rapid-data:/app/data
+      - rapid-logs:/app/logs
+    depends_on:
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - rapid-network
+    restart: unless-stopped
+
+  # ── ollama: local LLM inference (optional) ────────────────────────────────
+  # To pull a model after first start:
+  #   docker exec rapid-ollama-1 ollama pull llama3.2
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - rapid-network
+    restart: unless-stopped
+
+networks:
+  rapid-network:
+    driver: bridge
+
+volumes:
+  rapid-data:
+  rapid-logs:
+  ollama-data:

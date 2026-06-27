@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Org Overview — RAPID</title>
+  <link rel="stylesheet" href="rapid-design.css?v=2" />
+  <script src="config.js"></script>
+  <script src="dept-config.js"></script>
+  <style>
+    body { display:flex; height:100vh; overflow:hidden; background:var(--bg); background-image:var(--bg-pattern); background-size:var(--bg-pattern-size); }
+    #main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+    .content-area { flex:1; overflow-y:auto; }
+    .org-wrap { padding:24px 28px 48px; }
+
+    /* Division single-dept layout (Technology: 2 depts uses 1-col grid) */
+    .division-depts.single-col { grid-template-columns:1fr; }
+    .division-depts.single-col .dept-mini { border-right:none; }
+    .division-depts.single-col .dept-mini:last-child { border-bottom:none; }
+    .division-depts.single-col .dept-mini:nth-last-child(-n+2) { border-bottom:1px solid var(--border-subtle); }
+    .division-depts.single-col .dept-mini:last-child { border-bottom:none; }
+
+    /* Head tag colors */
+    .head-cfo { background:rgba(13,148,136,0.12); color:#0D9488; border:1px solid rgba(13,148,136,0.25); }
+    .head-cto { background:rgba(79,70,229,0.12);  color:#4F46E5; border:1px solid rgba(79,70,229,0.25); }
+    .head-coo { background:rgba(5,150,105,0.12);  color:#059669; border:1px solid rgba(5,150,105,0.25); }
+
+    /* Topbar extras */
+    .org-topbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+
+    /* Responsive */
+    @media (max-width:1100px) { .divisions-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ═══ SVG SPRITE ═══ -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="oi-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/>
+    <rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>
+  </symbol>
+  <symbol id="oi-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="oi-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="oi-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
+  </symbol>
+  <symbol id="oi-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+  </symbol>
+  <symbol id="oi-check-sq" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+  </symbol>
+  <symbol id="oi-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+  </symbol>
+  <symbol id="oi-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  </symbol>
+  <symbol id="oi-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+    <path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>
+  </symbol>
+  <symbol id="oi-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+  </symbol>
+  <symbol id="oi-bar-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>
+  </symbol>
+  <symbol id="oi-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+    <polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+  </symbol>
+  <symbol id="oi-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="6" height="6" x="16" y="16" rx="1"/><rect width="6" height="6" x="2" y="16" rx="1"/>
+    <rect width="6" height="6" x="9" y="2" rx="1"/>
+    <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>
+  </symbol>
+  <symbol id="oi-arrow-ur" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 17 17 7"/><path d="M7 7h10v10"/>
+  </symbol>
+  <symbol id="oi-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/>
+    <path d="M15 2v2M15 20v2M9 2v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/>
+  </symbol>
+</svg>
+
+<div class="app-shell">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon">R</div>
+      <div>
+        <div class="sidebar-brand-name">RAPID</div>
+        <div class="sidebar-brand-sub">Intelligence OS</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Workspace</div>
+      <a class="nav-item" href="app.html">
+        <svg class="nav-icon"><use href="#oi-dashboard"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-item" href="app.html#chat">
+        <svg class="nav-icon"><use href="#oi-chat"/></svg>
+        Intelligence Chat
+      </a>
+      <a class="nav-item" href="app.html#projects">
+        <svg class="nav-icon"><use href="#oi-folder"/></svg>
+        Projects
+      </a>
+      <a class="nav-item" href="app.html#skills">
+        <svg class="nav-icon"><use href="#oi-zap"/></svg>
+        Skills &amp; Reports
+      </a>
+      <a class="nav-item" href="app.html#search">
+        <svg class="nav-icon"><use href="#oi-search"/></svg>
+        Search
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Intelligence</div>
+      <a class="nav-item" href="app.html#actions">
+        <svg class="nav-icon"><use href="#oi-check-sq"/></svg>
+        Actions &amp; Approvals
+      </a>
+      <a class="nav-item" href="app.html#people">
+        <svg class="nav-icon"><use href="#oi-users"/></svg>
+        People
+      </a>
+      <a class="nav-item" href="app.html#notifications">
+        <svg class="nav-icon"><use href="#oi-bell"/></svg>
+        Notifications
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Department</div>
+      <a class="nav-item" href="dept.html">
+        <svg class="nav-icon"><use href="#oi-building"/></svg>
+        My Department
+      </a>
+      <a class="nav-item" href="app.html#user-requests">
+        <svg class="nav-icon"><use href="#oi-clipboard"/></svg>
+        User Requests
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Executive</div>
+      <a class="nav-item active" href="org.html">
+        <svg class="nav-icon"><use href="#oi-network"/></svg>
+        Org Overview
+      </a>
+      <a class="nav-item" href="app.html#exec-dash">
+        <svg class="nav-icon"><use href="#oi-bar-chart"/></svg>
+        Exec Dashboard
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar" id="user-av">?</div>
+        <div style="min-width:0">
+          <div class="user-name" id="user-nm">Loading...</div>
+          <div class="user-role" id="user-rl"></div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">
+        <svg width="12" height="12" style="vertical-align:middle;margin-right:4px"><use href="#oi-logout"/></svg>
+        Sign out
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div id="main">
+    <header class="topbar">
+      <nav class="bc" aria-label="Breadcrumb">
+        <a href="app.html">RAPID</a>
+        <span class="bc-sep">/</span>
+        <span style="color:var(--text)">Org Overview</span>
+      </nav>
+      <div class="org-topbar-right">
+        <span class="status-live"><span class="live-dot"></span><span id="hdr-online">10/10</span> agents online</span>
+        <button class="topbar-btn" onclick="window.location.href='dept.html'">Dept View</button>
+      </div>
+    </header>
+
+    <div class="content-area">
+      <div class="org-wrap" id="org-root">
+        <div style="display:flex;align-items:center;justify-content:center;height:300px;gap:10px;color:var(--text-muted)">
+          <div class="mini-spinner"></div>
+          <span style="font-size:13px">Loading org view...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const { DEPT, DIVISIONS } = window.RAPID_DEPT;
+
+  function getUser() { try { return JSON.parse(localStorage.getItem('rapid_user')); } catch { return null; } }
+  function doLogout() {
+    localStorage.removeItem('rapid_token');
+    localStorage.removeItem('rapid_user');
+    window.location.href = 'index.html';
+  }
+
+  window.doLogout = doLogout;
+
+  function sendQuery() {
+    const q = document.getElementById('org-q').value.trim();
+    if (q) {
+      sessionStorage.setItem('chat_prefill', q);
+      window.location.href = 'app.html#chat';
+    }
+  }
+
+  window.sendQuery = sendQuery;
+
+  function renderOrg() {
+    const deptList = Object.values(DEPT);
+
+    /* build division blocks */
+    const divKeys    = Object.keys(DIVISIONS);
+    const headCls    = { CFO:'head-cfo', CTO:'head-cto', COO:'head-coo' };
+
+    const divisionBlocks = divKeys.map(dk => {
+      const div = DIVISIONS[dk];
+      const depts = div.depts.map(k => DEPT[k]).filter(Boolean);
+      const isSingle = depts.length <= 2;
+
+      const deptCards = depts.map(d => `
+        <a class="dept-mini" href="dept.html?dept=${d.key}">
+          <div class="dept-mini-top">
+            <div class="dept-mini-dot" style="background:${d.accent}"></div>
+            <span class="dept-mini-name">${d.short === d.key ? d.name : d.short}</span>
+          </div>
+          <div class="dept-mini-meta">
+            <span>${d.agents.length} agents</span>
+            <span>&middot;</span>
+            <span>${d.tables.length} tables</span>
+            <span>&middot;</span>
+            <span>${d.peers.length} peers</span>
+          </div>
+          <span class="dept-mini-query">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/>
+            </svg>
+            Query &rarr;
+          </span>
+        </a>`).join('');
+
+      return `
+        <div class="division-block">
+          <div class="division-hdr">
+            <div>
+              <div class="division-name">${div.name}</div>
+              <div class="division-sub">${depts.length} department${depts.length !== 1 ? 's' : ''}</div>
+            </div>
+            <span class="division-head-tag ${headCls[div.head] || ''}">${div.head}</span>
+          </div>
+          <div class="division-depts${isSingle ? ' single-col' : ''}">
+            ${deptCards}
+          </div>
+        </div>`;
+    }).join('');
+
+    /* org health numbers (static demo) */
+    const totalAgents = deptList.reduce((s, d) => s + d.agents.length, 0);
+    const totalTables = deptList.reduce((s, d) => s + d.tables.length, 0);
+
+    document.getElementById('org-root').innerHTML = `
+
+      <!-- ORG HEADER -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <h1 style="font-size:20px;font-weight:700;letter-spacing:-0.025em;color:var(--text);margin-bottom:3px">RAPID Enterprise</h1>
+          <p style="font-size:13px;color:var(--text-dim)">3 divisions &middot; 10 departments &middot; ${totalAgents} AI agents &middot; ${totalTables} data tables</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted)">
+          <span>Last sync</span>
+          <span style="color:var(--text-dim);font-weight:500;font-family:'Courier New',monospace">2 min ago</span>
+        </div>
+      </div>
+
+      <!-- CROSS-ORG QUERY BAR -->
+      <div class="org-query-bar">
+        <span class="org-query-bar-icon">
+          <svg width="16" height="16" aria-hidden="true"><use href="#oi-search"/></svg>
+        </span>
+        <input type="text" id="org-q" placeholder="Ask anything across RAPID Enterprise — queries all departments simultaneously..." onkeydown="if(event.key==='Enter') sendQuery()" />
+        <button class="org-query-btn" onclick="sendQuery()">Query All</button>
+      </div>
+
+      <!-- DIVISIONS GRID -->
+      <div class="divisions-grid">
+        ${divisionBlocks}
+      </div>
+
+      <!-- ORG HEALTH STRIP -->
+      <div class="org-health">
+        <div class="org-health-item">
+          <span class="org-health-val green">10/10</span>
+          <span class="org-health-lbl">Agents Online</span>
+        </div>
+        <div class="org-health-item">
+          <span class="org-health-val">${totalAgents}</span>
+          <span class="org-health-lbl">Total Sub-Agents</span>
+        </div>
+        <div class="org-health-item">
+          <span class="org-health-val">${totalTables}</span>
+          <span class="org-health-lbl">Data Tables</span>
+        </div>
+        <div class="org-health-item">
+          <span class="org-health-val blue">247</span>
+          <span class="org-health-lbl">Queries Today</span>
+        </div>
+        <div class="org-health-item">
+          <span class="org-health-val">84%</span>
+          <span class="org-health-lbl">Avg Confidence</span>
+        </div>
+        <div class="org-health-item">
+          <span class="org-health-val amber">3</span>
+          <span class="org-health-lbl">Pending Escalations</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDenied() {
+    document.getElementById('org-root').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-title">Executive Access Required</div>
+        <div class="empty-desc">The Org Overview is restricted to C-Suite and Admin roles.<br>Contact your administrator to request elevated access.</div>
+        <a href="dept.html" class="btn btn-secondary btn-sm" style="margin-top:14px">&larr; Back to Department</a>
+      </div>`;
+  }
+
+  /* ── init ── */
+  (function init() {
+    const token = localStorage.getItem('rapid_token');
+    if (!token) { window.location.href = 'index.html'; return; }
+
+    const user = getUser() || {};
+    const nm   = user.username || 'User';
+    const role = user.role     || 'employee';
+
+    document.getElementById('user-nm').textContent = nm;
+    document.getElementById('user-rl').textContent = role;
+    document.getElementById('user-av').textContent = nm[0].toUpperCase();
+
+    const execRoles = ['admin', 'c_suite', 'ceo', 'cfo', 'cto', 'coo'];
+    if (!execRoles.includes(role)) {
+      renderDenied();
+      return;
+    }
+
+    renderOrg();
+  })();
+})();
+</script>
+</body>
+</html>

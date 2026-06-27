@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAPID — Intelligence Platform</title>
+  <link rel="stylesheet" href="rapid-design.css" />
+  <script src="config.js"></script>
+  <style>
+    body {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      background-image: var(--bg-pattern);
+      background-size: var(--bg-pattern-size);
+    }
+
+    /* ── Main area ── */
+    #main     { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .content-area { flex: 1; overflow-y: auto; background: var(--bg); }
+
+    /* ── Page wrappers ── */
+    .dash-wrap, .projects-wrap, .skills-wrap, .search-wrap,
+    .actions-wrap, .people-wrap, .dept-wrap, .exec-wrap { padding: 26px 28px; }
+    .notif-wrap { padding: 26px 28px; max-width: 760px; }
+
+    /* ── Grids ── */
+    .stats-grid  { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 24px; }
+    .two-col     { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+    .three-col   { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+    /* ── Page header ── */
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+    .page-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+
+    /* ── Dashboard greeting ── */
+    .dash-greeting { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+    .dash-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; }
+
+    /* ── Chat layout ── */
+    .chat-layout { display: flex; height: 100%; overflow: hidden; }
+
+    .chat-sidebar {
+      width: 248px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .chat-sidebar-header {
+      padding: 13px 13px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-sidebar-header h3 { font-size: 13px; font-weight: 600; }
+
+    .chat-sessions { flex: 1; overflow-y: auto; padding: 6px; }
+
+    .session-item {
+      padding: 9px 10px;
+      border-radius: var(--r-md);
+      cursor: pointer;
+      transition: background var(--t-fast);
+      margin-bottom: 1px;
+    }
+
+    .session-item:hover  { background: rgba(255,255,255,0.04); }
+    .session-item.active { background: var(--accent-dim); }
+
+    .session-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .session-meta  { font-size: 11px; color: var(--text-muted); }
+
+    .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .chat-topbar {
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+
+    .agent-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 11px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(76,110,245,0.2);
+      border-radius: var(--r-full);
+    }
+
+    .agent-dot  { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+    .agent-name { font-size: 12px; font-weight: 600; color: var(--accent); }
+
+    .chat-project-select {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: var(--r-md);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color var(--t-fast);
+      margin-left: auto;
+    }
+
+    .chat-project-select:focus { border-color: var(--accent); }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .msg { display: flex; gap: 11px; max-width: 82%; }
+    .msg.user  { flex-direction: row-reverse; align-self: flex-end; }
+    .msg.agent { align-self: flex-start; }
+
+    .msg.user  .bubble { background: var(--accent); color: white; border-radius: var(--r-xl) var(--r-xs) var(--r-xl) var(--r-xl); }
+    .msg.agent .bubble { background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--r-xs) var(--r-xl) var(--r-xl) var(--r-xl); }
+
+    .msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      align-self: flex-end;
+    }
+
+    .msg-avatar.agent { background: var(--gradient); }
+    .msg-avatar.user  { background: linear-gradient(135deg, #0EA371, #0891b2); }
+
+    .bubble {
+      padding: 10px 14px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .typing-indicator { display: flex; gap: 4px; padding: 10px 14px; }
+    .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: bounce 1.2s infinite ease-in-out; }
+    .typing-dot:nth-child(2) { animation-delay: 0.18s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.36s; }
+
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+    .chat-input-area {
+      padding: 13px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .chat-input-row { display: flex; gap: 9px; align-items: flex-end; }
+
+    .chat-input {
+      flex: 1;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      resize: none;
+      max-height: 130px;
+      line-height: 1.55;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
+    }
+    .chat-input:focus { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+    .chat-input::placeholder { color: var(--text-muted); }
+
+    .send-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--r-md);
+      background: var(--gradient);
+      border: none;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity var(--t-fast), transform var(--t-fast);
+      flex-shrink: 0;
+      box-shadow: 0 1px 6px rgba(76,110,245,0.3);
+    }
+    .send-btn:hover   { opacity: 0.88; }
+    .send-btn:active  { transform: scale(0.93); }
+    .send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+    /* ── Projects ── */
+    .projects-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+
+    .project-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 18px;
+      cursor: pointer;
+      transition: border-color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .project-card:hover { border-color: var(--border-active); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+    .project-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .project-icon { width: 34px; height: 34px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; }
+    .project-status { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: var(--r-full); }
+    .project-status.active  { background: var(--success-dim); color: var(--success); }
+    .project-status.pending { background: var(--warning-dim); color: var(--warning); }
+    .project-status.done    { background: var(--accent-dim);  color: var(--accent); }
+    .project-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.01em; }
+    .project-desc { font-size: 13px; color: var(--text-dim); margin-bottom: 13px; line-height: 1.5; }
+    .project-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-muted); }
+
+    /* ── Actions ── */
+    .actions-tabs { display: flex; gap: 4px; margin-bottom: 18px; }
+    .tab-btn {
+      padding: 6px 13px;
+      border-radius: var(--r-md);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+    }
+    .tab-btn:hover  { border-color: var(--border-active); color: var(--text); }
+    .tab-btn.active { background: var(--accent-dim); border-color: rgba(76,110,245,0.3); color: var(--accent); }
+
+    .action-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .action-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 16px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .action-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 7px; }
+    .action-card-title  { font-size: 14px; font-weight: 600; margin-bottom: 3px; letter-spacing: -0.01em; }
+    .action-card-meta   { font-size: 12px; color: var(--text-dim); }
+
+    .priority-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: var(--r-full); }
+    .priority-badge.high   { background: var(--error-dim);   color: var(--error); }
+    .priority-badge.medium { background: var(--warning-dim); color: var(--warning); }
+    .priority-badge.low    { background: var(--success-dim); color: var(--success); }
+
+    .action-desc { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.5; }
+
+    .action-btns { display: flex; gap: 8px; }
+
+    .btn-approve {
+      padding: 6px 13px;
+      background: var(--success-dim);
+      border: 1px solid rgba(14,163,113,0.25);
+      color: var(--success);
+      border-radius: var(--r-sm);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+    }
+    .btn-approve:hover  { background: var(--success); color: white; border-color: var(--success); }
+    .btn-approve:active { transform: scale(0.97); }
+
+    .btn-reject {
+      padding: 6px 13px;
+      background: var(--error-dim);
+      border: 1px solid rgba(232,64,64,0.25);
+      color: var(--error);
+      border-radius: var(--r-sm);
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+    }
+    .btn-reject:hover  { background: var(--error); color: white; border-color: var(--error); }
+    .btn-reject:active { transform: scale(0.97); }
+
+    .btn-view {
+      padding: 6px 13px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: var(--r-sm);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color var(--t-fast), color var(--t-fast);
+    }
+    .btn-view:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── People ── */
+    .people-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+
+    .person-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 20px;
+      text-align: center;
+      transition: border-color var(--t-fast), transform var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .person-card:hover { border-color: var(--border-active); transform: translateY(-2px); }
+
+    .person-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--gradient); margin: 0 auto 11px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: white; }
+    .person-name   { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+    .person-role   { font-size: 12px; color: var(--text-dim); margin-bottom: 2px; }
+    .person-dept   { font-size: 12px; color: var(--accent); font-weight: 500; }
+
+    /* ── Notifications ── */
+    .notif-item {
+      display: flex;
+      gap: 12px;
+      padding: 14px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      margin-bottom: 7px;
+      cursor: pointer;
+      transition: border-color var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .notif-item:hover { border-color: var(--border-active); }
+    .notif-item.unread { border-left: 2px solid var(--accent); }
+
+    .notif-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 5px; }
+    .notif-dot.read { background: var(--text-muted); }
+    .notif-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+    .notif-body  { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+    .notif-time  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── Skills ── */
+    .skills-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+
+    .skill-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .skill-card:hover { border-color: var(--border-active); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+    .skill-icon   { font-size: 24px; margin-bottom: 11px; }
+    .skill-name   { font-size: 14px; font-weight: 600; margin-bottom: 5px; letter-spacing: -0.01em; }
+    .skill-desc   { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+    .skill-output { font-size: 11px; color: var(--accent); margin-top: 10px; font-weight: 600; letter-spacing: 0.02em; }
+
+    /* ── Search ── */
+    .search-big-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 12px 16px;
+      margin-bottom: 22px;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .search-big-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+    .search-big-box input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 15px; font-family: inherit; }
+    .search-big-box input::placeholder { color: var(--text-muted); }
+
+    .search-results { display: flex; flex-direction: column; gap: 8px; }
+
+    .search-result {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color var(--t-fast);
+      box-shadow: var(--shadow-card);
+    }
+    .search-result:hover { border-color: var(--border-active); }
+
+    .result-type    { font-size: 10px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
+    .result-title   { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.01em; }
+    .result-excerpt { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+
+    /* ── Executive dash ── */
+    .exec-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 20px; }
+    .exec-query-input {
+      flex: 1;
+      padding: 11px 14px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
+    }
+    .exec-query-input:focus { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+
+    /* ── Approval stages ── */
+    .approval-stages { display: flex; gap: 12px; margin-bottom: 22px; }
+    .stage-card { flex: 1; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; text-align: center; box-shadow: var(--shadow-card); }
+    .stage-count { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; color: var(--text); }
+    .stage-label { font-size: 12px; color: var(--text-dim); }
+
+    /* ── People search wrapper ── */
+    .people-search-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 7px 11px;
+      width: 260px;
+      transition: border-color var(--t-fast);
+    }
+    .people-search-wrap:focus-within { border-color: var(--accent); }
+    .people-search-wrap input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── Utility ── */
+    .full-col { grid-column: 1 / -1; }
+    .flex-gap { display: flex; gap: 10px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- SVG icon sprite -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="icon-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="7" height="9" x="3" y="3" rx="1"/>
+    <rect width="7" height="5" x="14" y="3" rx="1"/>
+    <rect width="7" height="9" x="14" y="12" rx="1"/>
+    <rect width="7" height="5" x="3" y="16" rx="1"/>
+  </symbol>
+  <symbol id="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+  </symbol>
+  <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+  </symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="m21 21-4.3-4.3"/>
+  </symbol>
+  <symbol id="icon-check-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 10.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5"/>
+    <path d="m9 11 3 3L22 4"/>
+  </symbol>
+  <symbol id="icon-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+  </symbol>
+  <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+  </symbol>
+  <symbol id="icon-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+    <path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>
+  </symbol>
+  <symbol id="icon-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+    <path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/>
+  </symbol>
+  <symbol id="icon-bar-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 3v18h18"/>
+    <path d="M18 17V9M13 17V5M8 17v-3"/>
+  </symbol>
+  <symbol id="icon-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+    <polyline points="16 17 21 12 16 7"/>
+    <line x1="21" x2="9" y1="12" y2="12"/>
+  </symbol>
+  <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 12h14M12 5v14"/>
+  </symbol>
+  <symbol id="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m22 2-7 20-4-9-9-4Z"/>
+    <path d="M22 2 11 13"/>
+  </symbol>
+</svg>
+
+<!-- ══ SIDEBAR ══ -->
+<nav id="sidebar" class="sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-icon">R</div>
+    <div>
+      <div class="sidebar-brand-name">RAPID</div>
+      <div class="sidebar-brand-sub">Intelligence OS</div>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Workspace</div>
+    <a class="nav-item active" data-page="home" onclick="nav('home')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-dashboard"/></svg>
+      Dashboard
+    </a>
+    <a class="nav-item" data-page="chat" onclick="nav('chat')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-chat"/></svg>
+      Intelligence Chat
+    </a>
+    <a class="nav-item" data-page="projects" onclick="nav('projects')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-folder"/></svg>
+      Projects
+    </a>
+    <a class="nav-item" data-page="skills" onclick="nav('skills')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-zap"/></svg>
+      Skills &amp; Reports
+    </a>
+    <a class="nav-item" data-page="search" onclick="nav('search')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+      Search
+    </a>
+  </div>
+
+  <div class="nav-section role-mgr-up">
+    <div class="nav-section-label">Intelligence</div>
+    <a class="nav-item" data-page="actions" onclick="nav('actions')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-check-square"/></svg>
+      Actions &amp; Approvals
+      <span class="nav-badge" id="badge-actions">0</span>
+    </a>
+    <a class="nav-item" data-page="people" onclick="nav('people')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-users"/></svg>
+      People
+    </a>
+    <a class="nav-item" data-page="notifications" onclick="nav('notifications')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-bell"/></svg>
+      Notifications
+      <span class="nav-badge info" id="badge-notifs">0</span>
+    </a>
+  </div>
+
+  <div class="nav-section role-dept-up">
+    <div class="nav-section-label">Department</div>
+    <a class="nav-item" id="nav-my-dept" href="dept.html">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-building"/></svg>
+      My Department
+    </a>
+    <a class="nav-item" data-page="user-requests" onclick="nav('user-requests')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-clipboard"/></svg>
+      User Requests
+      <span class="nav-badge" id="badge-requests">0</span>
+    </a>
+  </div>
+
+  <div class="nav-section role-exec-up">
+    <div class="nav-section-label">Executive</div>
+    <a class="nav-item" data-page="exec-dash" onclick="nav('exec-dash')">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-bar-chart"/></svg>
+      Org Intelligence
+    </a>
+    <a class="nav-item" href="org.html">
+      <svg class="nav-icon" aria-hidden="true"><use href="#icon-building"/></svg>
+      Org Overview
+    </a>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="user-card">
+      <div class="user-avatar" id="nav-avatar">?</div>
+      <div>
+        <div class="user-name" id="nav-username">Loading…</div>
+        <div class="user-role" id="nav-role">—</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- ══ MAIN ══ -->
+<div id="main">
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">Dashboard</div>
+    <div class="topbar-search">
+      <span class="topbar-search-icon">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-search"/></svg>
+      </span>
+      <input type="text" placeholder="Search projects, documents, people…" id="globalSearch" onkeydown="if(event.key==='Enter')nav('search')" />
+    </div>
+    <button class="topbar-btn primary" onclick="nav('chat')">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-plus"/></svg>
+      New Chat
+    </button>
+  </div>
+
+  <div class="content-area">
+
+    <!-- ── HOME DASHBOARD ── -->
+    <div class="page active" id="page-home">
+      <div class="dash-wrap">
+        <div class="dash-greeting" id="dash-greeting">Good morning</div>
+        <div class="dash-sub" id="dash-sub">Here's what's happening across your workspace today.</div>
+
+        <div class="stats-grid" id="dash-stats">
+          <div class="stat-card">
+            <div class="stat-label">Active Projects</div>
+            <div class="stat-value" id="stat-projects">—</div>
+            <div class="stat-change">Loading…</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Pending Actions</div>
+            <div class="stat-value" id="stat-actions">—</div>
+            <div class="stat-change">Awaiting your review</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">AI Queries Today</div>
+            <div class="stat-value" id="stat-queries">—</div>
+            <div class="stat-change up" id="stat-queries-change">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Notifications</div>
+            <div class="stat-value" id="stat-notifs">—</div>
+            <div class="stat-change">Unread</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Recent Projects</div></div>
+            <div id="dash-projects"><div class="loading-state"><div class="mini-spinner"></div> Loading…</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Pending Actions</div></div>
+            <div id="dash-actions"><div class="loading-state"><div class="mini-spinner"></div> Loading…</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INTELLIGENCE CHAT ── -->
+    <div class="page" id="page-chat">
+      <div class="chat-layout">
+        <div class="chat-sidebar">
+          <div class="chat-sidebar-header">
+            <h3>Conversations</h3>
+            <button class="icon-btn" onclick="newChatSession()" title="New conversation" aria-label="New conversation">
+              <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-plus"/></svg>
+            </button>
+          </div>
+          <div class="chat-sessions" id="chat-sessions-list">
+            <div class="loading-state"><div class="mini-spinner"></div></div>
+          </div>
+        </div>
+        <div class="chat-main">
+          <div class="chat-topbar">
+            <div class="agent-indicator">
+              <div class="agent-dot"></div>
+              <span class="agent-name" id="active-agent-name">RAPID Agent</span>
+            </div>
+            <select id="chat-project-select" class="chat-project-select" onchange="updateChatProject()">
+              <option value="">— Portfolio query (all projects) —</option>
+            </select>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="msg agent">
+              <div class="msg-avatar agent">R</div>
+              <div>
+                <div class="bubble">Hello! I'm your RAPID Intelligence Agent. I can query your data, analyze trends, generate reports, and help you make decisions. What would you like to explore?</div>
+                <div class="bubble-meta">RAPID Agent</div>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <div class="chat-input-row">
+              <textarea class="chat-input" id="chatInput" placeholder="Ask anything about your data, projects, or organization…" rows="1"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+                oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+              <button class="send-btn" onclick="sendChat()" id="sendChatBtn" aria-label="Send">
+                <svg class="icon icon-md" aria-hidden="true"><use href="#icon-send"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROJECTS ── -->
+    <div class="page" id="page-projects">
+      <div class="projects-wrap">
+        <div class="page-header">
+          <h2>Projects</h2>
+          <button class="topbar-btn primary" onclick="showCreateProject()">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-plus"/></svg>
+            New Project
+          </button>
+        </div>
+        <div class="projects-grid" id="projects-grid">
+          <div class="loading-state full-col"><div class="mini-spinner"></div> Loading projects…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SKILLS & REPORTS ── -->
+    <div class="page" id="page-skills">
+      <div class="skills-wrap">
+        <div class="page-header">
+          <h2>Skills &amp; Report Generator</h2>
+        </div>
+        <div class="skills-grid" id="skills-grid">
+          <div class="loading-state full-col"><div class="mini-spinner"></div> Loading skills…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SEARCH ── -->
+    <div class="page" id="page-search">
+      <div class="search-wrap">
+        <div class="page-header"><h2>Search</h2></div>
+        <div class="search-big-box">
+          <svg class="icon icon-lg" style="color:var(--text-muted);flex-shrink:0" aria-hidden="true"><use href="#icon-search"/></svg>
+          <input type="text" id="searchInput" placeholder="Search documents, projects, people, insights…"
+            onkeydown="if(event.key==='Enter')doSearch()" />
+          <button class="topbar-btn" onclick="doSearch()">Search</button>
+        </div>
+        <div id="search-results">
+          <div class="empty-state">
+            <div class="empty-title">Search your workspace</div>
+            <div class="empty-desc">Type something and press Enter to search across documents, projects, and people.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ACTIONS & APPROVALS ── -->
+    <div class="page" id="page-actions">
+      <div class="actions-wrap">
+        <div class="page-header"><h2>Actions &amp; Approvals</h2></div>
+        <div class="actions-tabs">
+          <button class="tab-btn active" onclick="switchActionsTab('pending',this)">Pending</button>
+          <button class="tab-btn" onclick="switchActionsTab('approved',this)">Approved</button>
+          <button class="tab-btn" onclick="switchActionsTab('rejected',this)">Rejected</button>
+        </div>
+        <div class="action-list" id="actions-list">
+          <div class="loading-state"><div class="mini-spinner"></div> Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PEOPLE ── -->
+    <div class="page" id="page-people">
+      <div class="people-wrap">
+        <div class="page-header">
+          <h2>People Directory</h2>
+          <div class="people-search-wrap">
+            <svg class="icon icon-sm" style="color:var(--text-muted);flex-shrink:0" aria-hidden="true"><use href="#icon-search"/></svg>
+            <input type="text" placeholder="Search people…" id="peopleSearch" oninput="filterPeople()" />
+          </div>
+        </div>
+        <div class="people-grid" id="people-grid">
+          <div class="loading-state full-col"><div class="mini-spinner"></div> Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NOTIFICATIONS ── -->
+    <div class="page" id="page-notifications">
+      <div class="notif-wrap">
+        <div class="page-header">
+          <h2>Notifications</h2>
+          <button class="topbar-btn" onclick="markAllRead()">Mark all read</button>
+        </div>
+        <div id="notif-list">
+          <div class="loading-state"><div class="mini-spinner"></div> Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DEPARTMENT PANEL (dept_head) ── -->
+    <div class="page" id="page-dept-panel">
+      <div class="dept-wrap">
+        <div class="page-header"><h2>My Department</h2></div>
+        <div class="approval-stages" id="dept-stages">
+          <div class="stage-card"><div class="stage-count" id="dept-pending">—</div><div class="stage-label">Pending Review</div></div>
+          <div class="stage-card"><div class="stage-count" id="dept-approved">—</div><div class="stage-label">Approved</div></div>
+          <div class="stage-card"><div class="stage-count" id="dept-projects">—</div><div class="stage-label">Active Projects</div></div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Pending User Requests</div></div>
+            <div id="dept-requests-list"><div class="loading-state"><div class="mini-spinner"></div></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Department Projects</div></div>
+            <div id="dept-projects-list"><div class="loading-state"><div class="mini-spinner"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── USER REQUESTS (dept_head) ── -->
+    <div class="page" id="page-user-requests">
+      <div class="actions-wrap">
+        <div class="page-header"><h2>User Access Requests</h2></div>
+        <div class="action-list" id="user-requests-list">
+          <div class="loading-state"><div class="mini-spinner"></div> Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EXECUTIVE ORG INTELLIGENCE (ceo / c_suite) ── -->
+    <div class="page" id="page-exec-dash">
+      <div class="exec-wrap">
+        <div class="page-header"><h2>Organization Intelligence</h2></div>
+        <div class="exec-grid" id="exec-stats">
+          <div class="stat-card"><div class="stat-label">Total Departments</div><div class="stat-value" id="exec-depts">—</div></div>
+          <div class="stat-card"><div class="stat-label">Active Projects</div><div class="stat-value" id="exec-projects">—</div></div>
+          <div class="stat-card"><div class="stat-label">AI Actions Today</div><div class="stat-value" id="exec-actions">—</div></div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><div class="card-title">Cross-Department Portfolio Query</div></div>
+          <div class="flex-gap">
+            <input type="text" id="exec-query" class="exec-query-input" placeholder="Ask anything across all departments…"
+              onkeydown="if(event.key==='Enter')sendExecQuery()" />
+            <button class="topbar-btn primary" onclick="sendExecQuery()">Ask AI</button>
+          </div>
+          <div id="exec-query-result" style="margin-top:14px;font-size:14px;color:var(--text-dim);line-height:1.7"></div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Department Overview</div></div>
+            <div id="exec-dept-list"><div class="loading-state"><div class="mini-spinner"></div></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Agent Activity</div></div>
+            <div id="exec-agent-list"><div class="loading-state"><div class="mini-spinner"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content-area -->
+</div><!-- /main -->
+
+<!-- ═══════════════════════════════════════════════════ SCRIPT ═══════════════════════════════════════════════════ -->
+<script>
+const API = window.RAPID_API_URL;
+let currentUser = null;
+let currentToken = null;
+let currentPage = 'home';
+let allPeople = [];
+let activeChatProject = '';
+let currentChatSessionId = null;
+
+// ── Auth helpers ──
+function getToken() {
+  return localStorage.getItem('rapid_token');
+}
+
+async function apiFetch(path, opts = {}) {
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers || {})
+    }
+  });
+  if (res.status === 401) { logout(); return null; }
+  return res;
+}
+
+function logout() {
+  localStorage.removeItem('rapid_token');
+  localStorage.removeItem('rapid_refresh');
+  localStorage.removeItem('rapid_user');
+  window.location.href = 'index.html';
+}
+
+// ── Role helpers ──
+const ROLE_RANK = { employee:1, finance_analyst:1, sales_rep:1, manager:2, dept_head:3, division_head:4, c_suite:5, ceo:5, admin:6 };
+function roleRank(r) { return ROLE_RANK[r] || 1; }
+function hasRole(minRole) { return currentUser && roleRank(currentUser.role) >= roleRank(minRole); }
+
+function applyRoleGating() {
+  const rank = currentUser ? roleRank(currentUser.role) : 1;
+  document.querySelectorAll('.role-mgr-up').forEach(el  => el.classList.toggle('role-hidden', rank < 2));
+  document.querySelectorAll('.role-dept-up').forEach(el  => el.classList.toggle('role-hidden', rank < 3));
+  document.querySelectorAll('.role-exec-up').forEach(el  => el.classList.toggle('role-hidden', rank < 5));
+}
+
+// ── Navigation ──
+const PAGE_TITLES = {
+  home: 'Dashboard', chat: 'Intelligence Chat', projects: 'Projects',
+  skills: 'Skills & Reports', search: 'Search', actions: 'Actions & Approvals',
+  people: 'People Directory', notifications: 'Notifications',
+  'dept-panel': 'My Department', 'user-requests': 'User Requests', 'exec-dash': 'Org Intelligence'
+};
+
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
+  const el = document.getElementById(`page-${page}`);
+  if (el) el.classList.add('active');
+  document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(a => a.classList.add('active'));
+  document.getElementById('topbar-title').textContent = PAGE_TITLES[page] || page;
+  currentPage = page;
+
+  // Lazy load page data
+  if (page === 'projects') loadProjects();
+  if (page === 'chat') loadChatSessions();
+  if (page === 'actions') loadActions('pending');
+  if (page === 'people') loadPeople();
+  if (page === 'notifications') loadNotifications();
+  if (page === 'skills') loadSkills();
+  if (page === 'dept-panel') loadDeptPanel();
+  if (page === 'user-requests') loadUserRequests();
+  if (page === 'exec-dash') loadExecDash();
+}
+
+// ── Time helper ──
+function timeAgo(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const s = Math.floor((now - d) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── INIT ──
+async function init() {
+  const token = getToken();
+  const userData = localStorage.getItem('rapid_user');
+  if (!token || !userData) { window.location.href = 'index.html'; return; }
+
+  try { currentUser = JSON.parse(userData); } catch { logout(); return; }
+  currentToken = token;
+
+  // Update sidebar user info
+  document.getElementById('nav-username').textContent = currentUser.name || currentUser.username;
+  document.getElementById('nav-role').textContent = currentUser.role;
+  document.getElementById('nav-avatar').textContent = (currentUser.name || currentUser.username)[0].toUpperCase();
+
+  // Greeting
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('dash-greeting').textContent = `${greet}, ${currentUser.name || currentUser.username}`;
+
+  applyRoleGating();
+  loadDashboard();
+}
+
+// ── DASHBOARD ──
+async function loadDashboard() {
+  // Projects count
+  try {
+    const r = await apiFetch('/projects');
+    if (r && r.ok) {
+      const d = await r.json();
+      const projects = d.projects || d || [];
+      document.getElementById('stat-projects').textContent = projects.length;
+      renderDashProjects(projects.slice(0, 4));
+      // populate chat project dropdown
+      const sel = document.getElementById('chat-project-select');
+      projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id || p.project_id;
+        opt.textContent = p.name || p.title;
+        sel.appendChild(opt);
+      });
+    }
+  } catch {}
+
+  // Actions count
+  try {
+    const r = await apiFetch('/actions/stats');
+    if (r && r.ok) {
+      const d = await r.json();
+      document.getElementById('stat-actions').textContent = d.pending_count ?? d.pending ?? '—';
+      document.getElementById('badge-actions').textContent = d.pending_count ?? d.pending ?? 0;
+    }
+  } catch {}
+
+  // Notifications count
+  try {
+    const r = await apiFetch('/notifications/count');
+    if (r && r.ok) {
+      const d = await r.json();
+      const cnt = d.unread_count ?? d.count ?? 0;
+      document.getElementById('stat-notifs').textContent = cnt;
+      document.getElementById('badge-notifs').textContent = cnt;
+    }
+  } catch {}
+
+  // Agent stats
+  try {
+    const r = await apiFetch('/agents/stats');
+    if (r && r.ok) {
+      const d = await r.json();
+      document.getElementById('stat-queries').textContent = d.total_queries ?? d.queries_today ?? '—';
+    }
+  } catch { document.getElementById('stat-queries').textContent = '—'; }
+
+  // Pending actions list
+  try {
+    const r = await apiFetch('/actions?status=pending&limit=3');
+    if (r && r.ok) {
+      const d = await r.json();
+      const items = d.actions || d || [];
+      renderDashActions(items);
+    }
+  } catch {}
+}
+
+function renderDashProjects(projects) {
+  const el = document.getElementById('dash-projects');
+  if (!projects.length) { el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No projects yet.</p></div>'; return; }
+  el.innerHTML = projects.map(p => `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="nav('projects')">
+      <div style="width:34px;height:34px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:13px;font-weight:600;flex-shrink:0">${escapeHtml((p.name||p.title||'P')[0].toUpperCase())}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name||p.title)}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${escapeHtml(p.department||'')}</div>
+      </div>
+      <span class="tag ${p.status==='active'?'tag-green':'tag-blue'}">${p.status||'active'}</span>
+    </div>`).join('');
+}
+
+function renderDashActions(items) {
+  const el = document.getElementById('dash-actions');
+  if (!items.length) { el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No pending actions.</p></div>'; return; }
+  el.innerHTML = items.map(a => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(a.title||a.action_type||'Action')}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">${escapeHtml(a.description||'').substring(0,80)}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-approve" style="padding:5px 12px;font-size:12px" onclick="quickApprove('${a.id||a.action_id}')">Approve</button>
+        <button class="btn-reject"  style="padding:5px 12px;font-size:12px" onclick="quickReject('${a.id||a.action_id}')">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── PROJECTS ──
+async function loadProjects() {
+  const grid = document.getElementById('projects-grid');
+  grid.innerHTML = '<div class="loading-state full-col"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch('/projects');
+    if (!r || !r.ok) { grid.innerHTML = '<div class="empty-state full-col"><p>Could not load projects.</p></div>'; return; }
+    const d = await r.json();
+    const projects = d.projects || d || [];
+    if (!projects.length) { grid.innerHTML = '<div class="empty-state full-col"><div class="empty-title">No projects yet</div><div class="empty-desc">Create your first project to get started.</div></div>'; return; }
+    const colors = ['#4f6ef7','#8b5cf6','#10b981','#f59e0b','#ef4444','#06b6d4'];
+    grid.innerHTML = projects.map((p, i) => {
+      const color = colors[i % colors.length];
+      return `<div class="project-card" onclick="openProject('${p.id||p.project_id}')">
+        <div class="project-card-header">
+          <div class="project-icon" style="background:${color}18"><span style="color:${color};font-size:14px;font-weight:700">${escapeHtml((p.name||'P')[0].toUpperCase())}</span></div>
+          <span class="project-status ${p.status||'active'}">${p.status||'active'}</span>
+        </div>
+        <div class="project-name">${escapeHtml(p.name||p.title)}</div>
+        <div class="project-desc">${escapeHtml((p.description||'').substring(0,100))}</div>
+        <div class="project-meta">
+          <span>${new Date(p.created_at||Date.now()).toLocaleDateString()}</span>
+          <span>${escapeHtml(p.department||'General')}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch { grid.innerHTML = '<div class="empty-state full-col"><p>Error loading projects.</p></div>'; }
+}
+
+function openProject(id) {
+  document.getElementById('chat-project-select').value = id;
+  activeChatProject = id;
+  nav('chat');
+}
+
+function showCreateProject() {
+  const name = prompt('Project name:');
+  if (!name) return;
+  const dept = prompt('Department:') || 'General';
+  createProject(name, dept);
+}
+
+async function createProject(name, department) {
+  const r = await apiFetch('/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name, department, description: '' })
+  });
+  if (r && r.ok) loadProjects();
+  else alert('Could not create project.');
+}
+
+// ── CHAT ──
+async function loadChatSessions() {
+  const list = document.getElementById('chat-sessions-list');
+  list.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div></div>';
+  try {
+    const r = await apiFetch('/chat-sessions');
+    if (!r || !r.ok) { list.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-muted)">No sessions.</div>'; return; }
+    const sessions = await r.json();
+    const arr = Array.isArray(sessions) ? sessions : (sessions.sessions || []);
+    if (!arr.length) {
+      list.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--text-muted)">No conversations yet. Start a new one!</div>';
+      return;
+    }
+    list.innerHTML = arr.map(s => `
+      <div class="session-item ${s.id===currentChatSessionId?'active':''}" onclick="loadSession('${s.id}')">
+        <div class="session-title">${escapeHtml(s.title||'Untitled conversation')}</div>
+        <div class="session-meta">${timeAgo(s.updated_at||s.created_at)}</div>
+      </div>`).join('');
+  } catch { list.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--text-muted)">Could not load sessions.</div>'; }
+}
+
+async function newChatSession() {
+  try {
+    const r = await apiFetch('/chat-sessions', { method: 'POST', body: JSON.stringify({ title: 'New conversation' }) });
+    if (r && r.ok) {
+      const s = await r.json();
+      currentChatSessionId = s.id || s.session_id;
+      loadChatSessions();
+      document.getElementById('chat-messages').innerHTML = `
+        <div class="msg agent">
+          <div class="msg-avatar agent">R</div>
+          <div><div class="bubble">New conversation started. What would you like to explore?</div></div>
+        </div>`;
+    }
+  } catch {}
+}
+
+async function loadSession(id) {
+  currentChatSessionId = id;
+  document.querySelectorAll('.session-item').forEach(el => {
+    el.classList.toggle('active', el.onclick.toString().includes(id));
+  });
+  const msgsEl = document.getElementById('chat-messages');
+  msgsEl.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Loading messages…</div>';
+  try {
+    const r = await apiFetch(`/chat-sessions/${id}/messages`);
+    if (!r || !r.ok) { msgsEl.innerHTML = ''; return; }
+    const msgs = await r.json();
+    const arr = Array.isArray(msgs) ? msgs : (msgs.messages || []);
+    msgsEl.innerHTML = '';
+    arr.forEach(m => appendMessage(m.role==='user'?'user':'agent', m.content));
+  } catch { msgsEl.innerHTML = ''; }
+}
+
+function updateChatProject() {
+  activeChatProject = document.getElementById('chat-project-select').value;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('sendChatBtn').disabled = true;
+
+  appendMessage('user', msg);
+
+  // Show typing
+  const typingId = 'typing-' + Date.now();
+  const msgsEl = document.getElementById('chat-messages');
+  msgsEl.innerHTML += `<div id="${typingId}" class="msg agent">
+    <div class="msg-avatar agent">R</div>
+    <div><div class="bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>
+  </div>`;
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+
+  try {
+    let endpoint, body;
+    if (activeChatProject) {
+      endpoint = `/projects/${activeChatProject}/query`;
+      body = { query: msg, session_id: currentChatSessionId };
+    } else {
+      endpoint = '/projects/portfolio/query';
+      body = { query: msg, session_id: currentChatSessionId };
+    }
+    const r = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById(typingId)?.remove();
+
+    if (!r || !r.ok) {
+      appendMessage('agent', 'Sorry, I encountered an error processing your query.');
+    } else {
+      const d = await r.json();
+      const answer = d.answer || d.response || d.result || JSON.stringify(d);
+      appendMessage('agent', answer);
+    }
+  } catch (err) {
+    document.getElementById(typingId)?.remove();
+    appendMessage('agent', 'Connection error. Please check the backend is running.');
+  }
+
+  document.getElementById('sendChatBtn').disabled = false;
+}
+
+function appendMessage(role, text) {
+  const msgsEl = document.getElementById('chat-messages');
+  const isUser = role === 'user';
+  msgsEl.innerHTML += `<div class="msg ${role}">
+    <div class="msg-avatar ${role}">${isUser ? (currentUser?.name||'U')[0].toUpperCase() : 'R'}</div>
+    <div><div class="bubble">${escapeHtml(text).replace(/\n/g,'<br>')}</div></div>
+  </div>`;
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+// ── SKILLS ──
+async function loadSkills() {
+  const grid = document.getElementById('skills-grid');
+  grid.innerHTML = '<div class="loading-state full-col"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch('/skills/catalog');
+    if (!r || !r.ok) { renderDefaultSkills(); return; }
+    const d = await r.json();
+    const skills = d.skills || d || [];
+    if (!skills.length) { renderDefaultSkills(); return; }
+    grid.innerHTML = skills.map(s => `
+      <div class="skill-card" onclick="executeSkill('${s.id||s.skill_id}')">
+        <div class="skill-icon">${s.icon||'⚡'}</div>
+        <div class="skill-name">${escapeHtml(s.name)}</div>
+        <div class="skill-desc">${escapeHtml(s.description||'')}</div>
+        <div class="skill-output">Output: ${s.output_format||'document'}</div>
+      </div>`).join('');
+  } catch { renderDefaultSkills(); }
+}
+
+function renderDefaultSkills() {
+  const skills = [
+    { icon:'📊', name:'Data Analysis Report',   desc:'Analyze your department data and produce a structured insight report.', output:'XLSX / PDF' },
+    { icon:'📄', name:'Executive Summary',       desc:'Generate a concise executive summary from project data and AI analysis.', output:'DOCX' },
+    { icon:'📈', name:'Performance Dashboard',   desc:'Build a performance report covering KPIs, trends, and recommendations.', output:'PPTX / HTML' },
+    { icon:'🔍', name:'Risk Assessment',         desc:'Identify risks and anomalies in your data with AI-powered analysis.', output:'PDF' },
+    { icon:'📋', name:'Meeting Brief',           desc:'Prepare a meeting briefing from recent project activity and open items.', output:'DOCX' },
+    { icon:'📬', name:'Status Report',           desc:'Auto-generate a department status report for leadership review.', output:'DOCX / PPTX' },
+  ];
+  document.getElementById('skills-grid').innerHTML = skills.map(s => `
+    <div class="skill-card">
+      <div class="skill-icon">${s.icon}</div>
+      <div class="skill-name">${s.name}</div>
+      <div class="skill-desc">${s.desc}</div>
+      <div class="skill-output">Output: ${s.output}</div>
+    </div>`).join('');
+}
+
+async function executeSkill(skillId) {
+  const projectId = activeChatProject || prompt('Enter project ID to run skill on:');
+  if (!projectId) return;
+  const r = await apiFetch(`/projects/${projectId}/skills/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ skill_id: skillId })
+  });
+  if (r && r.ok) { alert('Skill executed. Check your projects for the output.'); }
+}
+
+// ── SEARCH ──
+async function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  const resultsEl = document.getElementById('search-results');
+  resultsEl.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Searching…</div>';
+  try {
+    const r = await apiFetch(`/search?q=${encodeURIComponent(q)}&limit=20`);
+    if (!r || !r.ok) { resultsEl.innerHTML = '<div class="empty-state"><p>Search failed.</p></div>'; return; }
+    const d = await r.json();
+    const results = d.results || d || [];
+    if (!results.length) { resultsEl.innerHTML = '<div class="empty-state"><div class="empty-title">No results found</div><div class="empty-desc">Try different search terms.</div></div>'; return; }
+    resultsEl.innerHTML = '<div class="search-results">' + results.map(r => `
+      <div class="search-result">
+        <div class="result-type">${escapeHtml(r.type||r.result_type||'document')}</div>
+        <div class="result-title">${escapeHtml(r.title||r.name||'Untitled')}</div>
+        <div class="result-excerpt">${escapeHtml((r.excerpt||r.description||r.content||'').substring(0,180))}</div>
+      </div>`).join('') + '</div>';
+  } catch { resultsEl.innerHTML = '<div class="empty-state"><p>Search error.</p></div>'; }
+}
+
+// ── ACTIONS ──
+let currentActionsTab = 'pending';
+async function loadActions(status) {
+  currentActionsTab = status;
+  const list = document.getElementById('actions-list');
+  list.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch(`/actions?status=${status}&limit=50`);
+    if (!r || !r.ok) { list.innerHTML = '<div class="empty-state"><p>Could not load actions.</p></div>'; return; }
+    const d = await r.json();
+    const items = d.actions || d || [];
+    if (!items.length) { list.innerHTML = `<div class="empty-state"><div class="empty-title">No ${status} actions</div><div class="empty-desc">Nothing requires your attention right now.</div></div>`; return; }
+    const canApprove = hasRole('manager');
+    list.innerHTML = items.map(a => `
+      <div class="action-card" id="action-${a.id||a.action_id}">
+        <div class="action-card-header">
+          <div>
+            <div class="action-card-title">${escapeHtml(a.title||a.action_type||'Action')}</div>
+            <div class="action-card-meta">Project: ${escapeHtml(a.project_id||'—')} · ${timeAgo(a.created_at)}</div>
+          </div>
+          <span class="priority-badge ${a.priority||'medium'}">${a.priority||'medium'}</span>
+        </div>
+        <div class="action-desc">${escapeHtml(a.description||a.reasoning||'').substring(0,200)}</div>
+        ${canApprove && status==='pending' ? `<div class="action-btns">
+          <button class="btn-approve" onclick="approveAction('${a.id||a.action_id}')">Approve</button>
+          <button class="btn-reject"  onclick="rejectAction('${a.id||a.action_id}')">Reject</button>
+        </div>` : ''}
+      </div>`).join('');
+  } catch { list.innerHTML = '<div class="empty-state"><p>Error loading actions.</p></div>'; }
+}
+
+function switchActionsTab(status, btn) {
+  document.querySelectorAll('.actions-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadActions(status);
+}
+
+async function approveAction(id) {
+  const note = prompt('Approval note (optional):') || '';
+  const r = await apiFetch(`/actions/${id}/approve`, { method: 'POST', body: JSON.stringify({ note }) });
+  if (r && r.ok) { document.getElementById(`action-${id}`)?.remove(); loadDashboard(); }
+}
+async function rejectAction(id) {
+  const reason = prompt('Rejection reason:') || 'Rejected';
+  const r = await apiFetch(`/actions/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+  if (r && r.ok) { document.getElementById(`action-${id}`)?.remove(); loadDashboard(); }
+}
+async function quickApprove(id) { await approveAction(id); }
+async function quickReject(id)  { await rejectAction(id); }
+
+// ── PEOPLE ──
+async function loadPeople() {
+  const grid = document.getElementById('people-grid');
+  grid.innerHTML = '<div class="loading-state full-col"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch('/people?limit=100');
+    if (!r || !r.ok) { grid.innerHTML = '<div class="empty-state full-col"><p>Could not load people.</p></div>'; return; }
+    const d = await r.json();
+    allPeople = d.people || d || [];
+    renderPeople(allPeople);
+  } catch { grid.innerHTML = '<div class="empty-state full-col"><p>Error.</p></div>'; }
+}
+
+function renderPeople(people) {
+  const grid = document.getElementById('people-grid');
+  if (!people.length) { grid.innerHTML = '<div class="empty-state full-col"><div class="empty-title">No people found</div></div>'; return; }
+  const colors = ['#4f6ef7','#8b5cf6','#10b981','#f59e0b','#ef4444'];
+  grid.innerHTML = people.map((p, i) => `
+    <div class="person-card">
+      <div class="person-avatar" style="background:linear-gradient(135deg,${colors[i%colors.length]},${colors[(i+1)%colors.length]})">${(p.name||p.full_name||'?')[0].toUpperCase()}</div>
+      <div class="person-name">${escapeHtml(p.name||p.full_name||'—')}</div>
+      <div class="person-role">${escapeHtml(p.role||p.title||'—')}</div>
+      <div class="person-dept">${escapeHtml(p.department||p.dept||'—')}</div>
+    </div>`).join('');
+}
+
+function filterPeople() {
+  const q = document.getElementById('peopleSearch').value.toLowerCase();
+  renderPeople(allPeople.filter(p => (p.name||p.full_name||'').toLowerCase().includes(q) || (p.department||'').toLowerCase().includes(q) || (p.role||'').toLowerCase().includes(q)));
+}
+
+// ── NOTIFICATIONS ──
+async function loadNotifications() {
+  const list = document.getElementById('notif-list');
+  list.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch('/notifications?limit=50');
+    if (!r || !r.ok) { list.innerHTML = '<div class="empty-state"><p>Could not load notifications.</p></div>'; return; }
+    const d = await r.json();
+    const items = d.notifications || d || [];
+    if (!items.length) { list.innerHTML = '<div class="empty-state"><div class="empty-title">All caught up</div><div class="empty-desc">No notifications right now.</div></div>'; return; }
+    list.innerHTML = items.map(n => `
+      <div class="notif-item ${n.read?'':'unread'}" onclick="markRead('${n.id||n.notification_id}')">
+        <div class="notif-dot ${n.read?'read':''}"></div>
+        <div style="flex:1">
+          <div class="notif-title">${escapeHtml(n.title||n.subject||'Notification')}</div>
+          <div class="notif-body">${escapeHtml(n.message||n.body||'')}</div>
+          <div class="notif-time">${timeAgo(n.created_at)}</div>
+        </div>
+      </div>`).join('');
+  } catch { list.innerHTML = '<div class="empty-state"><p>Error.</p></div>'; }
+}
+
+async function markRead(id) {
+  await apiFetch(`/notifications/${id}/read`, { method: 'POST' });
+  loadNotifications();
+}
+async function markAllRead() {
+  const r = await apiFetch('/notifications/count');
+  if (r && r.ok) { loadNotifications(); }
+}
+
+// ── DEPT HEAD PANEL ──
+async function loadDeptPanel() {
+  try {
+    const r = await apiFetch('/users/dept-requests');
+    if (r && r.ok) {
+      const d = await r.json();
+      const items = d.requests || d || [];
+      document.getElementById('dept-pending').textContent = items.filter(i => i.status==='pending').length;
+      document.getElementById('dept-approved').textContent = items.filter(i => i.status==='dept_approved').length;
+      renderDeptRequests(items.slice(0, 5));
+    }
+  } catch {}
+
+  try {
+    const r = await apiFetch('/projects');
+    if (r && r.ok) {
+      const d = await r.json();
+      const ps = d.projects || d || [];
+      document.getElementById('dept-projects').textContent = ps.length;
+      renderDeptProjects(ps.slice(0, 5));
+    }
+  } catch {}
+}
+
+function renderDeptRequests(items) {
+  const el = document.getElementById('dept-requests-list');
+  if (!items.length) { el.innerHTML = '<div class="empty-state" style="padding:16px"><p>No pending requests.</p></div>'; return; }
+  el.innerHTML = items.map(req => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(req.username||req.user_id||'User')}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Requested: ${escapeHtml(req.requested_role||req.role||'—')}</div>
+      ${req.status==='pending'?`<div style="display:flex;gap:6px">
+        <button class="btn-approve" style="padding:4px 10px;font-size:12px" onclick="deptApprove('${req.id||req.request_id}')">Approve</button>
+        <button class="btn-reject"  style="padding:4px 10px;font-size:12px" onclick="deptReject('${req.id||req.request_id}')">Reject</button>
+      </div>`:`<span class="tag ${req.status==='dept_approved'?'tag-green':'tag-red'}">${req.status}</span>`}
+    </div>`).join('');
+}
+
+function renderDeptProjects(ps) {
+  const el = document.getElementById('dept-projects-list');
+  if (!ps.length) { el.innerHTML = '<div class="empty-state" style="padding:16px"><p>No projects.</p></div>'; return; }
+  el.innerHTML = ps.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:6px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:11px;font-weight:700;flex-shrink:0">${escapeHtml((p.name||'P')[0].toUpperCase())}</div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:500">${escapeHtml(p.name||p.title)}</div></div>
+      <span class="tag ${p.status==='active'?'tag-green':'tag-blue'}">${p.status||'active'}</span>
+    </div>`).join('');
+}
+
+async function deptApprove(id) {
+  const note = prompt('Note (optional):') || '';
+  const r = await apiFetch(`/users/requests/${id}/dept-approve`, { method: 'POST', body: JSON.stringify({ note }) });
+  if (r && r.ok) loadDeptPanel();
+}
+async function deptReject(id) {
+  const reason = prompt('Reason:') || 'Rejected';
+  const r = await apiFetch(`/users/requests/${id}/dept-reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+  if (r && r.ok) loadDeptPanel();
+}
+
+// ── USER REQUESTS (dept_head view) ──
+async function loadUserRequests() {
+  const list = document.getElementById('user-requests-list');
+  list.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Loading…</div>';
+  try {
+    const r = await apiFetch('/users/dept-requests');
+    if (!r || !r.ok) { list.innerHTML = '<div class="empty-state"><p>Could not load requests.</p></div>'; return; }
+    const d = await r.json();
+    const items = d.requests || d || [];
+    document.getElementById('badge-requests').textContent = items.filter(i => i.status==='pending').length;
+    if (!items.length) { list.innerHTML = '<div class="empty-state"><div class="empty-title">No requests to review</div></div>'; return; }
+    list.innerHTML = items.map(req => `
+      <div class="action-card">
+        <div class="action-card-header">
+          <div>
+            <div class="action-card-title">${escapeHtml(req.username||req.user_id||'User')}</div>
+            <div class="action-card-meta">Requested role: ${escapeHtml(req.requested_role||'—')} · ${timeAgo(req.created_at)}</div>
+          </div>
+          <span class="tag ${req.status==='pending'?'tag-yellow':req.status==='dept_approved'?'tag-green':'tag-red'}">${req.status||'pending'}</span>
+        </div>
+        <div class="action-desc">${escapeHtml(req.reason||req.justification||'')}</div>
+        ${req.status==='pending'?`<div class="action-btns">
+          <button class="btn-approve" onclick="deptApprove('${req.id||req.request_id}')">Approve</button>
+          <button class="btn-reject"  onclick="deptReject('${req.id||req.request_id}')">Reject</button>
+        </div>`:''}
+      </div>`).join('');
+  } catch { list.innerHTML = '<div class="empty-state"><p>Error.</p></div>'; }
+}
+
+// ── EXEC DASHBOARD ──
+async function loadExecDash() {
+  try {
+    const r = await apiFetch('/projects');
+    if (r && r.ok) {
+      const d = await r.json();
+      document.getElementById('exec-projects').textContent = (d.projects||d||[]).length;
+    }
+  } catch {}
+  try {
+    const r = await apiFetch('/departments');
+    if (r && r.ok) {
+      const d = await r.json();
+      const depts = d.departments || d || [];
+      document.getElementById('exec-depts').textContent = depts.length;
+      const el = document.getElementById('exec-dept-list');
+      el.innerHTML = depts.map(dept => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="width:28px;height:28px;border-radius:6px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:11px;font-weight:700;flex-shrink:0">${escapeHtml((dept.name||dept.dept||dept||'D')[0].toUpperCase())}</div>
+          <div style="flex:1"><div style="font-size:13px;font-weight:500">${escapeHtml(dept.name||dept.dept||dept)}</div></div>
+        </div>`).join('');
+    }
+  } catch {}
+  try {
+    const r = await apiFetch('/agents/stats');
+    if (r && r.ok) {
+      const d = await r.json();
+      document.getElementById('exec-actions').textContent = d.total_queries ?? d.actions_today ?? '—';
+      const el = document.getElementById('exec-agent-list');
+      const stats = d.by_department || d.agents || [];
+      if (stats.length) {
+        el.innerHTML = stats.map(a => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:13px">${escapeHtml(a.department||a.name||a)}</span>
+            <span class="tag tag-blue">${a.queries||a.count||0} queries</span>
+          </div>`).join('');
+      } else {
+        el.innerHTML = '<div class="empty-state" style="padding:16px"><p>No agent data yet.</p></div>';
+      }
+    }
+  } catch {}
+}
+
+async function sendExecQuery() {
+  const q = document.getElementById('exec-query').value.trim();
+  if (!q) return;
+  const resultEl = document.getElementById('exec-query-result');
+  resultEl.innerHTML = '<div class="loading-state"><div class="mini-spinner"></div> Querying all departments…</div>';
+  try {
+    const r = await apiFetch('/projects/portfolio/query', {
+      method: 'POST',
+      body: JSON.stringify({ query: q })
+    });
+    if (!r || !r.ok) { resultEl.textContent = 'Query failed.'; return; }
+    const d = await r.json();
+    resultEl.textContent = d.answer || d.response || d.result || JSON.stringify(d);
+  } catch { resultEl.textContent = 'Error connecting to backend.'; }
+}
+
+// ── BOOT ──
+init();
+</script>
+</body>
+</html>

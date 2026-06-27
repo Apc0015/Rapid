@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Department — RAPID</title>
+<link rel="stylesheet" href="rapid-design.css?v=2"/>
+<script src="config.js"></script>
+<script src="dept-config.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:var(--bg);background-image:var(--bg-pattern);background-size:var(--bg-pattern-size);font-family:system-ui,-apple-system,sans-serif}
+
+/* Reveal */
+.rev{opacity:1;transform:translateY(0);transition:opacity 360ms cubic-bezier(0.23,1,0.32,1),transform 360ms cubic-bezier(0.23,1,0.32,1)}
+@starting-style{.rev{opacity:0;transform:translateY(10px)}}
+
+/* ── Top nav ── */
+.tnav{flex-shrink:0;display:flex;align-items:center;gap:0;height:52px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.tnav-logo{width:28px;height:28px;border-radius:6px;background:var(--dept-accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0;transition:background var(--t-fast)}
+.tnav-brandname{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--text);margin:0 6px 0 10px}
+.tnav-brandsub{font-size:10px;color:var(--text-muted);font-weight:400}
+.tnav-vsep{width:1px;height:18px;background:var(--border-strong);margin:0 16px;flex-shrink:0}
+.tnav-deptbadge{display:flex;align-items:center;gap:7px}
+.tnav-deptdot{width:6px;height:6px;border-radius:50%;background:var(--dept-accent);animation:lp 2s ease-in-out infinite;flex-shrink:0}
+.tnav-deptname{font-size:13px;font-weight:600;color:var(--dept-accent)}
+.tnav-links{display:flex;align-items:center;gap:2px;margin:0 auto}
+.tnav-link{padding:6px 13px;border-radius:var(--r-sm);font-size:13px;color:var(--text-dim);text-decoration:none;transition:color var(--t-fast),background var(--t-fast)}
+.tnav-link:hover{color:var(--text);background:var(--surface-raised)}
+.tnav-link.cur{color:var(--text);background:var(--surface-raised)}
+.tnav-r{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.tnav-av{width:28px;height:28px;border-radius:50%;background:var(--dept-accent-dim);border:1.5px solid var(--dept-accent-border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--dept-accent);flex-shrink:0}
+.tnav-nm{font-size:12px;font-weight:600;color:var(--text)}
+.tnav-out{font-size:11px;color:var(--text-muted);background:none;border:1px solid var(--border);cursor:pointer;padding:5px 10px;border-radius:var(--r-sm);transition:color var(--t-fast),border-color var(--t-fast),transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.tnav-out:hover{color:var(--text);border-color:var(--border-strong)}
+.tnav-out:active{transform:scale(0.97)}
+
+/* Main scrollable */
+.main-scroll{flex:1;overflow-y:auto;scroll-behavior:smooth}
+
+/* ── User strip ── */
+.ustrip{display:flex;align-items:center;gap:14px;padding:11px 28px;border-bottom:1px solid var(--border);background:var(--surface)}
+.ustrip-av{width:32px;height:32px;border-radius:50%;background:var(--dept-accent-dim);border:1.5px solid var(--dept-accent-border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--dept-accent);flex-shrink:0}
+.ustrip-name{font-size:13px;font-weight:600;color:var(--text)}
+.ustrip-meta{font-size:11px;color:var(--text-muted);margin-top:1px}
+.ustrip-pills{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-left:auto}
+.ustrip-pill{font-size:10px;font-weight:500;padding:2px 8px;border-radius:var(--r-full);background:var(--dept-accent-dim);color:var(--dept-accent);border:1px solid var(--dept-accent-border)}
+.ustrip-pill.mut{background:var(--surface-raised);color:var(--text-muted);border-color:var(--border)}
+.ustrip-platform{font-size:11px;color:var(--text-muted);padding:4px 11px;border:1px solid var(--border);border-radius:var(--r-full);background:var(--surface-raised);display:flex;align-items:center;gap:5px;flex-shrink:0}
+.ustrip-pdot{width:5px;height:5px;border-radius:50%;background:#22c55e;flex-shrink:0}
+
+/* ── Dept hero ── */
+.dhero{display:grid;grid-template-columns:1fr 270px;gap:32px;padding:28px 28px 24px;border-bottom:1px solid var(--border);align-items:start}
+@media(max-width:900px){.dhero{grid-template-columns:1fr}}
+.dhero-eyebrow{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.dhero-live{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dept-accent)}
+.dhero-ldot{width:6px;height:6px;border-radius:50%;background:var(--dept-accent);animation:lp 2s ease-in-out infinite}
+@keyframes lp{0%,100%{opacity:1}50%{opacity:.3}}
+.dhero-divbadge{font-size:10px;color:var(--text-muted);padding:2px 9px;border:1px solid var(--border);border-radius:var(--r-full)}
+.dhero-h1{font-size:30px;font-weight:800;letter-spacing:-.04em;color:var(--text);line-height:1.1;margin-bottom:10px}
+.dhero-desc{font-size:13px;color:var(--text-dim);line-height:1.75;max-width:560px;margin-bottom:18px}
+.dhero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dhero-mi{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px}
+.dhero-mi strong{color:var(--dept-accent);font-weight:700;font-size:12px}
+.dhero-sep{color:var(--border-strong)}
+
+/* Hierarchy tree */
+.htree{display:flex;flex-direction:column;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 12px}
+.htree-node{padding:6px 14px;border-radius:var(--r-md);font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--surface-raised);color:var(--text-dim);text-align:center;white-space:nowrap;width:100%;box-sizing:border-box}
+.htree-node.curr{background:var(--dept-accent-dim);border-color:var(--dept-accent-border);color:var(--dept-accent);font-size:12px;box-shadow:0 0 0 3px var(--dept-accent-border)}
+.htree-vline{width:1px;height:16px;background:var(--border-strong);margin:0 auto}
+.htree-hrow{display:flex;gap:5px;position:relative;width:100%;padding-top:16px}
+.htree-hrow::before{content:'';position:absolute;top:0;left:6px;right:6px;height:1px;background:var(--border-strong)}
+.htree-child{flex:1;padding:4px 5px;border-radius:var(--r-sm);font-size:9px;font-weight:500;border:1px solid var(--border);background:var(--surface-elevated);color:var(--text-muted);text-align:center;position:relative}
+.htree-child::before{content:'';position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:1px;height:16px;background:var(--border-strong)}
+.htree-esc{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:10px;color:var(--text-muted);text-align:center;width:100%}
+.htree-esc strong{color:var(--dept-accent)}
+
+/* ── Stats row ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);background:var(--border);gap:1px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+@media(max-width:680px){.stats-row{grid-template-columns:repeat(2,1fr)}}
+.stat-cell{padding:18px 24px;background:var(--bg);transition:background var(--t-fast)}
+.stat-cell:hover{background:var(--surface)}
+.stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;font-weight:600}
+.stat-val{font-size:22px;font-weight:800;letter-spacing:-.035em;color:var(--text);line-height:1}
+.stat-chg{font-size:11px;margin-top:5px}
+.stat-chg.up{color:#22c55e}.stat-chg.dn{color:#ef4444}.stat-chg.neu{color:var(--text-muted)}
+
+/* ── Viz ── */
+.viz-wrap{display:grid;gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.viz-wrap.l3{grid-template-columns:2fr 1fr 1fr}
+.viz-wrap.l2{grid-template-columns:3fr 2fr}
+@media(max-width:900px){.viz-wrap.l3,.viz-wrap.l2{grid-template-columns:1fr}}
+.viz-cell{padding:20px 24px;background:var(--bg)}
+.viz-ttl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;font-weight:600}
+.viz-canvas{width:100%;display:block}
+
+/* ── Skills ── */
+.skills-wrap{padding:24px 28px;border-bottom:1px solid var(--border)}
+.sec-h{font-size:15px;font-weight:700;letter-spacing:-.015em;color:var(--text);margin-bottom:3px}
+.sec-sub{font-size:12px;color:var(--text-muted);margin-bottom:18px}
+.skills-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:900px){.skills-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.skills-grid{grid-template-columns:1fr}}
+.skill-cat-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dept-accent);margin-bottom:10px}
+.skill-tags{display:flex;flex-wrap:wrap;gap:5px}
+.stag{font-size:11px;padding:4px 10px;border-radius:var(--r-full);border:1px solid var(--border);background:var(--surface);color:var(--text-dim);transition:border-color 160ms,color 160ms,background 160ms;cursor:default}
+.stag:hover{border-color:var(--dept-accent-border);color:var(--text);background:var(--dept-accent-dim)}
+
+/* ── Tools ── */
+.tools-wrap{padding:20px 28px;border-bottom:1px solid var(--border);background:var(--surface)}
+.tools-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.tool-card{display:flex;align-items:center;gap:9px;padding:9px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg);transition:border-color 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.tool-card:hover{border-color:var(--dept-accent-border);transform:translateY(-1px)}
+.tool-abbr{width:28px;height:28px;border-radius:var(--r-sm);background:var(--dept-accent-dim);border:1px solid var(--dept-accent-border);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:var(--dept-accent);flex-shrink:0;letter-spacing:.02em}
+.tool-name{font-size:12px;font-weight:600;color:var(--text)}
+.tool-cat{font-size:10px;color:var(--text-muted)}
+.tool-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0;margin-left:4px}
+
+/* ── Workflows ── */
+.wf-wrap{padding:24px 28px;border-bottom:1px solid var(--border)}
+.wf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:760px){.wf-grid{grid-template-columns:1fr}}
+.wf-card{padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);text-align:left;cursor:pointer;transition:border-color 160ms,background 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1);display:flex;flex-direction:column;gap:6px;width:100%}
+.wf-card:hover{border-color:var(--dept-accent-border);background:var(--surface-raised)}
+.wf-card:active{transform:scale(0.97)}
+.wf-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.wf-name{font-size:13px;font-weight:700;color:var(--text)}
+.wf-time{font-size:10px;color:var(--dept-accent);padding:2px 8px;background:var(--dept-accent-dim);border:1px solid var(--dept-accent-border);border-radius:var(--r-full);flex-shrink:0}
+.wf-desc{font-size:11px;color:var(--text-dim);line-height:1.55}
+.wf-run{font-size:11px;font-weight:600;color:var(--dept-accent);display:flex;align-items:center;gap:4px;margin-top:2px}
+
+/* ── Prompts ── */
+.prompts-wrap{padding:24px 28px;border-bottom:1px solid var(--border)}
+.prompt-feat{display:flex;align-items:center;gap:12px;padding:14px 18px;margin-bottom:12px;background:var(--dept-accent-dim);border:1px solid var(--dept-accent-border);border-radius:var(--r-lg);cursor:pointer;transition:border-color 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.prompt-feat:hover{border-color:var(--dept-accent)}
+.prompt-feat:active{transform:scale(0.97)}
+.pf-ico{width:32px;height:32px;border-radius:var(--r-md);background:var(--dept-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff}
+.pf-label{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--dept-accent);font-weight:700;margin-bottom:2px}
+.pf-q{font-size:13px;font-weight:500;color:var(--text);line-height:1.4}
+.pf-arr{color:var(--dept-accent);flex-shrink:0;margin-left:auto}
+.prompts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:680px){.prompts-grid{grid-template-columns:1fr}}
+.pchip{padding:10px 13px;border:1px solid var(--border);border-radius:var(--r-md);font-size:12px;color:var(--text-dim);background:var(--surface);cursor:pointer;transition:border-color 160ms,color 160ms,background 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1);line-height:1.5;text-align:left;display:flex;align-items:flex-start;gap:7px;width:100%}
+.pchip:hover{border-color:var(--dept-accent-border);color:var(--text);background:var(--surface-raised)}
+.pchip:active{transform:scale(0.97)}
+.pchip-n{font-size:10px;font-weight:700;color:var(--dept-accent);flex-shrink:0;margin-top:1px;opacity:.65}
+
+/* ── Roster ── */
+.roster-wrap{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+@media(max-width:760px){.roster-wrap{grid-template-columns:1fr}}
+.roster-cell{background:var(--bg);padding:20px 24px}
+.roster-ttl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;font-weight:600}
+.agent-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.agent-row:last-child{border-bottom:none;padding-bottom:0}
+.agent-dot{width:8px;height:8px;border-radius:50%;background:var(--dept-accent);flex-shrink:0;margin-top:4px;box-shadow:0 0 0 3px var(--dept-accent-dim)}
+.agent-name{font-size:13px;font-weight:600;color:var(--text)}
+.agent-desc{font-size:11px;color:var(--text-muted);margin-top:2px}
+.data-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.data-row:last-child{border-bottom:none;padding-bottom:0}
+.data-ico{width:26px;height:26px;border-radius:var(--r-sm);background:var(--surface-raised);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-muted)}
+.data-name{font-size:11px;font-weight:600;color:var(--text);font-family:'Courier New',monospace}
+.data-desc{font-size:10px;color:var(--text-muted)}
+.access-pill{font-size:10px;font-weight:500;padding:2px 8px;border-radius:var(--r-full);flex-shrink:0;margin-left:auto;white-space:nowrap}
+.access-full{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.2)}
+.access-read{background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.2)}
+.access-dept{background:rgba(234,179,8,.1);color:#eab308;border:1px solid rgba(234,179,8,.2)}
+.access-none{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+
+/* ── Peers ── */
+.peers-wrap{padding:20px 28px;border-bottom:1px solid var(--border)}
+.peers-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
+.peer-src{padding:10px 16px;background:var(--dept-accent-dim);border:1px solid var(--dept-accent-border);border-radius:var(--r-md);font-size:12px;font-weight:700;color:var(--dept-accent)}
+.peer-arr{color:var(--border-strong);font-size:18px;line-height:1}
+.peer-card{padding:9px 13px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);text-decoration:none;transition:border-color 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.peer-card:hover{border-color:var(--dept-accent-border)}
+.peer-card:active{transform:scale(0.97)}
+.peer-name{font-size:12px;font-weight:600;color:var(--text)}
+.peer-reason{font-size:10px;color:var(--text-muted)}
+
+/* ── Action bar ── */
+.action-bar{display:flex;align-items:center;gap:8px;padding:13px 28px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+.btn-ask{display:flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--r-md);background:var(--dept-accent);color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:opacity 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.btn-ask:hover{opacity:.88}
+.btn-ask:active{transform:scale(0.97)}
+.btn-act{display:flex;align-items:center;gap:6px;padding:9px 15px;border-radius:var(--r-md);background:transparent;color:var(--text-dim);font-size:13px;font-weight:500;border:1px solid var(--border);cursor:pointer;transition:border-color 160ms,color 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.btn-act:hover{border-color:var(--dept-accent-border);color:var(--text)}
+.btn-act:active{transform:scale(0.97)}
+.btn-esc{margin-left:auto;display:flex;align-items:center;gap:6px;padding:9px 15px;border-radius:var(--r-md);background:transparent;color:var(--text-muted);font-size:12px;font-weight:500;border:1px solid var(--border);cursor:pointer;transition:border-color 160ms,color 160ms,transform 160ms cubic-bezier(0.23,1,0.32,1)}
+.btn-esc:hover{border-color:var(--border-strong);color:var(--text)}
+.btn-esc:active{transform:scale(0.97)}
+
+/* Brief */
+.brief-bar{display:flex;align-items:center;gap:14px;padding:12px 28px;background:var(--surface);border-bottom:1px solid var(--border)}
+.brief-icon{width:30px;height:30px;border-radius:var(--r-md);background:var(--dept-accent-dim);border:1px solid var(--dept-accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--dept-accent)}
+.brief-text{flex:1;font-size:12px;color:var(--text-dim);line-height:1.55}
+.brief-text strong{color:var(--text)}
+.brief-dismiss{font-size:11px;color:var(--text-muted);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:var(--r-sm);flex-shrink:0;transition:color var(--t-fast)}
+.brief-dismiss:hover{color:var(--text)}
+.doc-tag{display:inline-block;margin:3px 3px 0 0;font-size:10px;padding:3px 9px;border:1px solid var(--border);border-radius:var(--r-full);color:var(--text-muted);background:var(--surface-raised)}
+</style>
+</head>
+<body>
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-dash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+  <symbol id="ic-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="ic-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M9 2v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2"/></symbol>
+  <symbol id="ic-arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></symbol>
+  <symbol id="ic-bar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></symbol>
+  <symbol id="ic-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></symbol>
+  <symbol id="ic-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></symbol>
+  <symbol id="ic-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></symbol>
+  <symbol id="ic-net" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="6" x="16" y="16" rx="1"/><rect width="6" height="6" x="2" y="16" rx="1"/><rect width="6" height="6" x="9" y="2" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/></symbol>
+</svg>
+
+<!-- TOP NAV -->
+<nav class="tnav">
+  <div class="tnav-logo" id="tnav-logo">R</div>
+  <span class="tnav-brandname">RAPID</span>
+  <span class="tnav-brandsub">Intelligence OS</span>
+  <div class="tnav-vsep"></div>
+  <div class="tnav-deptbadge">
+    <div class="tnav-deptdot"></div>
+    <span class="tnav-deptname" id="tnav-deptname">—</span>
+  </div>
+  <div class="tnav-links">
+    <a class="tnav-link" href="app.html"><svg width="13" height="13" style="vertical-align:middle;margin-right:4px"><use href="#ic-dash"/></svg>Dashboard</a>
+    <a class="tnav-link" href="app.html#chat"><svg width="13" height="13" style="vertical-align:middle;margin-right:4px"><use href="#ic-chat"/></svg>AI Chat</a>
+    <a class="tnav-link" href="app.html#projects"><svg width="13" height="13" style="vertical-align:middle;margin-right:4px"><use href="#ic-folder"/></svg>Projects</a>
+    <a class="tnav-link cur" href="dept.html"><svg width="13" height="13" style="vertical-align:middle;margin-right:4px"><use href="#ic-net"/></svg>Department</a>
+  </div>
+  <div class="tnav-r">
+    <div style="position:relative">
+      <input id="quick-q" type="text" placeholder="Ask this department…" style="width:240px;padding:6px 34px 6px 12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-raised);color:var(--text);font-size:12px;outline:none;transition:border-color var(--t-fast)" onfocus="this.style.borderColor='var(--dept-accent)'" onblur="this.style.borderColor='var(--border)'"/>
+      <button onclick="askAgent()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted)"><svg width="13" height="13"><use href="#ic-search"/></svg></button>
+    </div>
+    <div class="tnav-av" id="tnav-av">?</div>
+    <span class="tnav-nm" id="tnav-nm">—</span>
+    <button class="tnav-out" onclick="doLogout()"><svg width="11" height="11" style="vertical-align:middle;margin-right:3px"><use href="#ic-out"/></svg>Sign out</button>
+  </div>
+</nav>
+
+<!-- MAIN SCROLL -->
+<div class="main-scroll" id="main-scroll">
+  <div id="dept-root" style="display:flex;align-items:center;justify-content:center;height:260px;color:var(--text-muted);gap:10px">
+    <div class="mini-spinner"></div><span style="font-size:13px">Loading department…</span>
+  </div>
+</div>
+
+<!-- ACTION BAR (outside scroll so it stays fixed) -->
+<div class="action-bar" id="action-bar" style="display:none"></div>
+
+<script>
+(function(){
+const { DEPT, ACCESS_META } = window.RAPID_DEPT;
+
+const EX = {
+  finance:{
+    stats:[{l:'Q2 Revenue',v:'$2.35M',c:'+11.9%',up:true},{l:'Gross Margin',v:'60.0%',c:'+2 pts',up:true},{l:'Budget Used',v:'73%',c:null},{l:'Open Invoices',v:'14',c:'-3 this wk',up:true}],
+    feat:'What was our Q2 revenue versus budget target by department?',
+    prompts:['Show budget variance by department','Which expense claims are pending approval?','What is our gross margin trend this year?','List all invoices due in the next 30 days','Compare Q1 vs Q2 P&L summary'],
+    charts:[
+      {type:'line',title:'Revenue Trend ($M)',id:'cv0',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[1.85,2.0,2.1,2.2,2.1,2.35]},
+      {type:'dualbar',title:'Budget vs Actual ($k)',id:'cv1',labels:['Eng','Mktg','Sales','Ops'],vals:[[500,380],[300,220],[400,310],[200,155]]},
+      {type:'ring',title:'Expense Categories',id:'cv2',labels:['Travel','Software','Training','Other'],vals:[42,23,18,17]},
+      {type:'bar',title:'Receivables Aging (invoices)',id:'cv3',labels:['0-30d','31-60d','61-90d','90d+'],vals:[8,3,2,1]},
+      {type:'line',title:'Monthly Cash Flow ($k)',id:'cv4',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[45,38,52,61,48,55]},
+    ],
+    skills:[
+      {cat:'Financial Analysis',tags:['P&L Review','Variance Analysis','Revenue Forecasting','Cost Analysis','Profitability Modeling']},
+      {cat:'Accounting & Compliance',tags:['IFRS Standards','GAAP Compliance','Tax Reporting','Audit Preparation','Covenant Tracking']},
+      {cat:'Planning & Budgeting',tags:['Annual Budgeting','Rolling Forecasts','Scenario Modeling','Capital Planning','Burn Rate Analysis']},
+      {cat:'Cash & Treasury',tags:['Cash Flow Management','Working Capital','AP/AR Optimization','FX Exposure','Bank Reconciliation']},
+    ],
+    tools:[{a:'XR',n:'Xero',cat:'Accounting'},{a:'XL',n:'Excel / Sheets',cat:'Modeling'},{a:'ST',n:'Stripe',cat:'Payments'},{a:'SP',n:'SAP',cat:'ERP'},{a:'PL',n:'Plaid',cat:'Banking'},{a:'BI',n:'Power BI',cat:'Reporting'}],
+    workflows:[
+      {name:'Month-End Close',desc:'Reconcile P&L, verify variances, and flag anomalies automatically',time:'~45 min'},
+      {name:'Budget Forecast Refresh',desc:'Pull actuals and reforecast remaining quarters with updated assumptions',time:'~20 min'},
+      {name:'Expense Audit',desc:'Review submissions, flag policy breaches, generate approval queue',time:'~10 min'},
+    ],
+  },
+  hr:{
+    stats:[{l:'Headcount',v:'10',c:'+1 this qtr',up:true},{l:'Open Roles',v:'6',c:null},{l:'Avg Tenure',v:'2.8 yr',c:null},{l:'Leave Pending',v:'4',c:null}],
+    feat:'Show current headcount by department with trend vs last quarter',
+    prompts:['Which employees have leave approved in July?','What is the salary range for Engineering?','Show recruitment pipeline by open role','How many staff are on full benefits coverage?','List employees hired in the last 90 days'],
+    charts:[
+      {type:'bar',title:'Headcount by Team',id:'cv0',labels:['Eng','Finance','Sales','Mktg','HR','Legal','Ops','IT'],vals:[3,2,2,2,1,1,1,1]},
+      {type:'ring',title:'Benefits Coverage',id:'cv1',labels:['Family','Standard','Basic'],vals:[20,60,20]},
+      {type:'line',title:'Hires per Quarter',id:'cv2',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[4,6,3,5,7,3]},
+      {type:'bar',title:'Attrition Rate (%)',id:'cv3',labels:['Eng','Finance','Sales','Mktg','Ops'],vals:[8,4,12,6,5]},
+      {type:'ring',title:'Employment Type',id:'cv4',labels:['Full-time','Contract','Part-time'],vals:[78,15,7]},
+    ],
+    skills:[
+      {cat:'Talent Acquisition',tags:['Job Description Writing','Candidate Screening','Interview Scheduling','Offer Management','ATS Queries']},
+      {cat:'Employee Experience',tags:['Onboarding Workflows','Performance Reviews','Engagement Surveys','Leave Management','Exit Interviews']},
+      {cat:'Compensation & Benefits',tags:['Salary Benchmarking','Bonus Calculations','Benefits Enrollment','Pay Equity Analysis','Equity Management']},
+      {cat:'Workforce Planning',tags:['Org Chart Analysis','Succession Planning','Headcount Forecasting','Skills Gap Analysis','Retention Risk']},
+    ],
+    tools:[{a:'BH',n:'BambooHR',cat:'HRIS'},{a:'WD',n:'Workday',cat:'HR Platform'},{a:'LI',n:'LinkedIn',cat:'Recruiting'},{a:'GH',n:'Greenhouse',cat:'ATS'},{a:'SL',n:'Slack',cat:'Comms'},{a:'LS',n:'LearnSphere',cat:'L&D'}],
+    workflows:[
+      {name:'New Hire Onboarding',desc:'Auto-generate onboarding checklist, IT tickets, and first-week schedule',time:'~15 min'},
+      {name:'Performance Review Cycle',desc:'Distribute templates, collect feedback, compile calibration inputs',time:'~30 min'},
+      {name:'Headcount Reconciliation',desc:'Reconcile payroll vs org chart, flag discrepancies and open positions',time:'~20 min'},
+    ],
+  },
+  legal:{
+    stats:[{l:'Active Cases',v:'3',c:null},{l:'Compliance',v:'67%',c:'+12 pts',up:true},{l:'Active Contracts',v:'2',c:null},{l:'Reg Filings',v:'4',c:'1 pending',up:false}],
+    feat:'What is our current compliance status across all active regulations?',
+    prompts:['Show all active legal cases and status','Which contracts expire in the next 6 months?','List regulatory filings due this quarter','Show GDPR compliance review history','What regulations are currently in-progress?'],
+    charts:[
+      {type:'ring',title:'Compliance Status',id:'cv0',labels:['Compliant','In Progress','Pending'],vals:[2,1,1],colors:['#22c55e','#eab308','#6b7280']},
+      {type:'bar',title:'Filings by Status',id:'cv1',labels:['Submitted','In Progress','Pending'],vals:[2,1,1]},
+      {type:'bar',title:'Cases by Type',id:'cv2',labels:['Commercial','Regulatory','IP','Employment'],vals:[1,1,1,0]},
+      {type:'bar',title:'Contract Value ($k)',id:'cv3',labels:['Commercial','IP','Employment','Other'],vals:[450,120,80,35]},
+      {type:'line',title:'Compliance Score Trend (%)',id:'cv4',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[52,55,58,62,64,67]},
+    ],
+    skills:[
+      {cat:'Contract Management',tags:['Contract Drafting','Review & Redline','Lifecycle Tracking','Clause Library','NDAs & MSAs']},
+      {cat:'Regulatory Compliance',tags:['GDPR / Data Privacy','Industry Regulations','Filing Calendars','Compliance Audits','Reg Change Alerts']},
+      {cat:'Litigation & Risk',tags:['Case Management','Risk Assessment','E-Discovery Support','Settlement Analysis','Legal Hold Notices']},
+      {cat:'Corporate Governance',tags:['Board Resolutions','Entity Management','Shareholder Records','IP Portfolio','Trademark Filings']},
+    ],
+    tools:[{a:'DS',n:'DocuSign',cat:'e-Signature'},{a:'IC',n:'Ironclad',cat:'CLM'},{a:'LN',n:'LexisNexis',cat:'Legal Research'},{a:'NT',n:'NetSuite',cat:'Entity Mgmt'},{a:'ON',n:'OneTrust',cat:'Privacy'},{a:'JR',n:'Jira',cat:'Tracking'}],
+    workflows:[
+      {name:'Contract Review & Approval',desc:'Route contracts through legal review, redline, and e-signature flow',time:'~25 min'},
+      {name:'Compliance Calendar',desc:'Generate quarterly regulatory filing checklist with upcoming deadlines',time:'~10 min'},
+      {name:'Legal Hold Notice',desc:'Issue litigation hold, identify custodians, and begin e-discovery',time:'~30 min'},
+    ],
+  },
+  procurement:{
+    stats:[{l:'Active Suppliers',v:'5',c:null},{l:'Open POs',v:'2',c:null},{l:'YTD Spend',v:'£58k',c:null},{l:'Avg Vendor Rating',v:'4.3',c:'+0.1',up:true}],
+    feat:'Show all open purchase orders and their current approval status',
+    prompts:['Which suppliers are on the preferred vendor list?','What is total YTD spend by category?','Show all RFQs currently open for responses','Which purchase orders are pending approval?','Rank suppliers by Q1 evaluation score'],
+    charts:[
+      {type:'bar',title:'Spend by Category (£k)',id:'cv0',labels:['Hardware','Facilities','Office','Marketing','Software'],vals:[62,41,28,15,9.5]},
+      {type:'ring',title:'Supplier Status',id:'cv1',labels:['Active','Under Review'],vals:[4,1],colors:['#22c55e','#eab308']},
+      {type:'bar',title:'Vendor Ratings',id:'cv2',labels:['TechParts','Acme','FurniturePro','GlobalPrint','CloudServe'],vals:[4.5,4.2,4.1,3.9,3.6]},
+      {type:'line',title:'Monthly Spend Trend (£k)',id:'cv3',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[11,9,8,10,11,9]},
+      {type:'ring',title:'PO Status',id:'cv4',labels:['Approved','Pending','Draft'],vals:[3,2,1],colors:['#22c55e','#eab308','#6b7280']},
+    ],
+    skills:[
+      {cat:'Vendor Management',tags:['Vendor Sourcing','Qualification Checks','Performance Scoring','Relationship Management','Preferred Vendor List']},
+      {cat:'Sourcing & RFx',tags:['RFQ Creation','RFP Management','Bid Evaluation','Award Recommendations','Spend Cube Analysis']},
+      {cat:'Purchase Orders',tags:['PO Generation','Approval Routing','Receiving Confirmation','Three-Way Match','Invoice Reconciliation']},
+      {cat:'Contract & Compliance',tags:['Contract Compliance','Spend Controls','Policy Enforcement','Savings Tracking','Audit Trail']},
+    ],
+    tools:[{a:'AR',n:'SAP Ariba',cat:'Procurement'},{a:'CP',n:'Coupa',cat:'Spend Mgmt'},{a:'XR',n:'Xero',cat:'Accounting'},{a:'SL',n:'Slack',cat:'Comms'},{a:'DP',n:'DocuPilot',cat:'Docs'},{a:'AS',n:'Airtable',cat:'Vendor DB'}],
+    workflows:[
+      {name:'Vendor Onboarding',desc:'Run due diligence, collect compliance docs, and set up in ERP',time:'~35 min'},
+      {name:'RFQ to Award',desc:'Publish RFQ, collect bids, score responses, recommend preferred supplier',time:'~60 min'},
+      {name:'Spend Review',desc:'Pull YTD actuals, identify tail spend, flag non-compliant purchases',time:'~15 min'},
+    ],
+  },
+  sales:{
+    stats:[{l:'Pipeline Value',v:'$339k',c:null},{l:'Closed Won',v:'$480k',c:null},{l:'Avg Deal Size',v:'$68.8k',c:null},{l:'Win Rate',v:'40%',c:'+5 pts',up:true}],
+    feat:'What is our current pipeline value and forecast by stage for this quarter?',
+    prompts:['Show all deals closing this quarter','Which accounts have the highest health scores?','List all deals currently in negotiation','What is our average deal velocity this month?','Show Q2 revenue vs quota attainment'],
+    charts:[
+      {type:'bar',title:'Pipeline Value by Stage ($k)',id:'cv0',labels:['Discovery','Proposal','Negotiation','Won'],vals:[84,84,85,480]},
+      {type:'ring',title:'Deals by Stage',id:'cv1',labels:['Discovery','Proposal','Negotiation','Won'],vals:[3,2,1,4]},
+      {type:'line',title:'Closed Won Trend ($k)',id:'cv2',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[60,80,120,95,110,120]},
+      {type:'bar',title:'Win Rate by Stage (%)',id:'cv3',labels:['Discovery','Proposal','Negotiation'],vals:[70,55,72]},
+      {type:'bar',title:'Deal Size Buckets ($k)',id:'cv4',labels:['0-50','50-100','100-200','200+'],vals:[2,3,1,1]},
+    ],
+    skills:[
+      {cat:'Pipeline Management',tags:['Deal Scoring','Stage Progression','Forecast Accuracy','Pipeline Hygiene','Opportunity Notes']},
+      {cat:'Customer Intelligence',tags:['Account Research','Stakeholder Mapping','Competitive Analysis','Intent Signals','Win/Loss Review']},
+      {cat:'Revenue Operations',tags:['Quota Attainment','Territory Planning','Commission Calculation','CRM Data Quality','Revenue Forecasting']},
+      {cat:'Deal Execution',tags:['Proposal Generation','CPQ Queries','Contract Redlines','Negotiation Prep','Legal Handoff']},
+    ],
+    tools:[{a:'SF',n:'Salesforce',cat:'CRM'},{a:'HB',n:'HubSpot',cat:'CRM'},{a:'OR',n:'Outreach',cat:'Sequencing'},{a:'ZI',n:'ZoomInfo',cat:'Data'},{a:'LN',n:'LinkedIn SN',cat:'Prospecting'},{a:'GS',n:'Gong',cat:'Call Intel'}],
+    workflows:[
+      {name:'Deal Review Prep',desc:'Compile deal history, stakeholder notes, and competitive intel for review',time:'~10 min'},
+      {name:'Quota Attainment Report',desc:'Calculate rep attainment vs quota, identify at-risk reps and deals',time:'~15 min'},
+      {name:'Pipeline Cleanse',desc:'Flag stale deals, update close dates, remove duplicates from CRM',time:'~20 min'},
+    ],
+  },
+  marketing:{
+    stats:[{l:'Total Spend',v:'£91k',c:null},{l:'Total Leads',v:'1,010',c:null},{l:'Avg CPL',v:'£90',c:'-£21',up:true},{l:'Avg ROAS',v:'3.2×',c:'+0.3',up:true}],
+    feat:'Which campaign had the highest ROAS in Q1 2026, and what drove it?',
+    prompts:['Show lead volume by acquisition channel','What is our cost per lead this quarter?','Compare impressions across active campaigns','Which channel has the best conversion rate?','Show Q2 Summer Campaign performance so far'],
+    charts:[
+      {type:'bar',title:'Leads by Channel',id:'cv0',labels:['Google Ads','Meta','LinkedIn'],vals:[620,210,180]},
+      {type:'dualbar',title:'Spend vs Leads (norm.)',id:'cv1',labels:['Google','Meta','LinkedIn'],vals:[[95,62],[18,21],[28,18]]},
+      {type:'ring',title:'Spend Allocation',id:'cv2',labels:['Google Ads','LinkedIn','Meta'],vals:[67,20,13]},
+      {type:'line',title:'ROAS Trend',id:'cv3',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[2.1,2.6,2.9,3.1,3.0,3.2]},
+      {type:'bar',title:'Conversion Rate (%)',id:'cv4',labels:['Organic','LinkedIn','Google','Meta'],vals:[5.6,4.8,3.2,2.1]},
+    ],
+    skills:[
+      {cat:'Performance Marketing',tags:['PPC / Paid Search','Paid Social','SEO & Content','Attribution Modeling','A/B Testing']},
+      {cat:'Campaign Management',tags:['Campaign Planning','Budget Allocation','Creative Briefing','Launch Coordination','Post-Campaign Analysis']},
+      {cat:'Brand & Content',tags:['Brand Guidelines','Content Calendar','Copywriting Review','Social Media','Email Marketing']},
+      {cat:'Analytics & Data',tags:['GA4 Analysis','UTM Tracking','Audience Segmentation','Funnel Analysis','Cohort Reports']},
+    ],
+    tools:[{a:'GA',n:'Google Ads',cat:'Paid Search'},{a:'MB',n:'Meta Business',cat:'Paid Social'},{a:'HB',n:'HubSpot',cat:'Marketing'},{a:'G4',n:'GA4',cat:'Analytics'},{a:'MC',n:'Mailchimp',cat:'Email'},{a:'LI',n:'LinkedIn Ads',cat:'B2B Ads'}],
+    workflows:[
+      {name:'Campaign Performance Report',desc:'Pull channel metrics, compute ROAS and CPL, generate exec summary',time:'~10 min'},
+      {name:'Budget Reallocation',desc:'Analyze channel efficiency, recommend spend shifts for next month',time:'~20 min'},
+      {name:'Lead Quality Audit',desc:'Score lead cohort by source, filter MQLs, flag low-intent contacts',time:'~15 min'},
+    ],
+  },
+  ops:{
+    stats:[{l:'System Uptime',v:'99.8%',c:null},{l:'SLA Score',v:'97.2%',c:'-0.8 pts',up:false},{l:'Avg Delivery',v:'3.2 days',c:null},{l:'Active Shipments',v:'3',c:null}],
+    feat:'What are our current SLA performance metrics and which are below target?',
+    prompts:['Show all active logistics shipments and ETAs','Which KPIs are currently below target?','List vendor contracts due for renewal','Show SLA breach history for Q1','What operational processes are under review?'],
+    charts:[
+      {type:'bar',title:'KPI Actual vs Target',id:'cv0',labels:['Cust Sat','Order Fill%','Uptime%','SLA%'],vals:[4.3,97.2,99.8,97.2]},
+      {type:'ring',title:'Shipment Status',id:'cv1',labels:['Delivered','In Transit','Processing'],vals:[1,2,1],colors:['#22c55e','#eab308','#6b7280']},
+      {type:'line',title:'Delivery Days Trend',id:'cv2',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[3.5,3.3,3.2,3.4,3.1,3.2]},
+      {type:'bar',title:'SLA by Category (%)',id:'cv3',labels:['Delivery','Response','Resolution','Escalation'],vals:[97,99,94,98]},
+      {type:'line',title:'Monthly Uptime (%)',id:'cv4',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[99.6,99.8,99.9,99.7,99.9,99.8]},
+    ],
+    skills:[
+      {cat:'Process & Efficiency',tags:['Process Mapping','Bottleneck Analysis','SOP Documentation','Capacity Planning','Process Mining']},
+      {cat:'Logistics & Supply Chain',tags:['Shipment Tracking','Carrier Management','Demand Forecasting','Inventory Control','Last-Mile Ops']},
+      {cat:'SLA & Quality',tags:['SLA Monitoring','Breach Detection','Root Cause Analysis','Quality Audits','CSAT Tracking']},
+      {cat:'Vendor & Contracts',tags:['Vendor Scorecards','Contract Renewals','Penalty Clauses','Service Reviews','Escalation Paths']},
+    ],
+    tools:[{a:'JR',n:'Jira',cat:'Project Mgmt'},{a:'MD',n:'Monday.com',cat:'Workflows'},{a:'SP',n:'SAP',cat:'ERP'},{a:'SF',n:'Salesforce',cat:'CRM'},{a:'SH',n:'ShipStation',cat:'Logistics'},{a:'PB',n:'Power BI',cat:'Reporting'}],
+    workflows:[
+      {name:'Weekly Ops Review',desc:'Pull KPIs, compare to targets, flag outliers and at-risk SLAs',time:'~15 min'},
+      {name:'Vendor Performance Review',desc:'Score vendors on delivery, quality, and cost for quarterly review',time:'~25 min'},
+      {name:'Incident Post-Mortem',desc:'Generate root cause timeline, action items, and prevention plan',time:'~30 min'},
+    ],
+  },
+  it:{
+    stats:[{l:'Systems Active',v:'4 / 4',c:null},{l:'Licenses Used',v:'241/280',c:null},{l:'Infra Uptime',v:'99.9%',c:null},{l:'Open Requests',v:'2',c:null}],
+    feat:'What is the current health and utilization status of all infrastructure components?',
+    prompts:['Show software license utilization by vendor','Which systems had maintenance in the last 30 days?','List all access requests pending approval','Show license expiries in the next 90 days','What is infrastructure uptime across all components?'],
+    charts:[
+      {type:'bar',title:'License Utilization (%)',id:'cv0',labels:['M365','Slack','GitHub','Jira'],vals:[87,93,84,76]},
+      {type:'ring',title:'System Health',id:'cv1',labels:['Healthy','Degraded','Down'],vals:[4,0,0],colors:['#22c55e','#eab308','#ef4444']},
+      {type:'bar',title:'Infra Uptime (%)',id:'cv2',labels:['API GW','DB Cluster','CDN','Auth Svc'],vals:[99.9,99.8,100,99.9]},
+      {type:'bar',title:'Support Tickets',id:'cv3',labels:['Open','In Progress','Resolved','Closed'],vals:[2,1,12,8]},
+      {type:'line',title:'Incident Count Trend',id:'cv4',labels:['Jan','Feb','Mar','Apr','May','Jun'],vals:[3,2,1,2,1,0]},
+    ],
+    skills:[
+      {cat:'Infrastructure',tags:['Cloud Operations','Server Management','Network Config','Disaster Recovery','Capacity Planning']},
+      {cat:'Security & Access',tags:['Identity Management','Access Reviews','MFA Enforcement','Vulnerability Scanning','Patch Management']},
+      {cat:'Software & Licensing',tags:['License Optimization','SaaS Portfolio','Vendor Contracts','Cost Allocation','Renewal Tracking']},
+      {cat:'Service Desk',tags:['Ticket Triage','Escalation Routing','SLA Tracking','User Provisioning','Asset Inventory']},
+    ],
+    tools:[{a:'AW',n:'AWS',cat:'Cloud'},{a:'AZ',n:'Azure',cat:'Cloud'},{a:'OK',n:'Okta',cat:'Identity'},{a:'GH',n:'GitHub',cat:'Dev'},{a:'JR',n:'Jira SD',cat:'ITSM'},{a:'CF',n:'Cloudflare',cat:'Network'}],
+    workflows:[
+      {name:'License Renewal Review',desc:'Identify expiring licenses, check utilization, recommend keep/drop/renegotiate',time:'~20 min'},
+      {name:'Access Certification',desc:'Review all user permissions, flag excess access, generate approval requests',time:'~40 min'},
+      {name:'Incident Response',desc:'Assess severity, notify stakeholders, coordinate remediation, draft RCA',time:'~30 min'},
+    ],
+  },
+  rd:{
+    stats:[{l:'Active Projects',v:'3',c:null},{l:'Budget Allocated',v:'£435k',c:null},{l:'Experiments',v:'4',c:'2 active',up:true},{l:'IP Assets',v:'3',c:null}],
+    feat:'What is the current status and budget spend on all active R&D projects?',
+    prompts:['Show budget spend vs allocation by project','Which experiments have confirmed their hypothesis?','What IP assets are currently pending filing?','Show all R&D projects sorted by priority','List active experiments and current outcomes'],
+    charts:[
+      {type:'dualbar',title:'Budget vs Spend (£k)',id:'cv0',labels:['AI Opt.','Churn','Personali.','Voice','Carbon'],vals:[[180,62],[95,28],[120,44],[40,31],[60,5]]},
+      {type:'ring',title:'Project Status',id:'cv1',labels:['Active','Discovery','Paused'],vals:[3,1,1],colors:['#22c55e','#eab308','#6b7280']},
+      {type:'bar',title:'IP Portfolio',id:'cv2',labels:['Patent Filed','Copyright','Pending'],vals:[1,1,1]},
+      {type:'line',title:'Experiment Success Rate (%)',id:'cv3',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[40,50,45,60,55,62]},
+      {type:'bar',title:'Research Output by Quarter',id:'cv4',labels:['Q3 25','Q4 25','Q1 26','Q2 26'],vals:[3,4,2,3]},
+    ],
+    skills:[
+      {cat:'Research & Experimentation',tags:['Hypothesis Design','A/B & Multivariate Tests','Statistical Analysis','Experiment Tracking','Outcome Reporting']},
+      {cat:'Project Management',tags:['Research Roadmap','Milestone Tracking','Resource Allocation','Cross-team Collaboration','Risk Assessment']},
+      {cat:'Data & Insights',tags:['Data Modelling','Feature Engineering','Model Evaluation','Literature Review','Benchmark Analysis']},
+      {cat:'IP & Innovation',tags:['Patent Drafting','Prior Art Search','IP Filing Calendar','Technology Scouting','Innovation Pipeline']},
+    ],
+    tools:[{a:'JU',n:'Jupyter',cat:'Notebooks'},{a:'GH',n:'GitHub',cat:'Code'},{a:'AW',n:'SageMaker',cat:'ML Ops'},{a:'CF',n:'Confluence',cat:'Docs'},{a:'LR',n:'LangSmith',cat:'LLM Eval'},{a:'WB',n:'W&B',cat:'Experiment Tracking'}],
+    workflows:[
+      {name:'Experiment Setup',desc:'Define hypothesis, configure tracking, allocate compute, set success metrics',time:'~20 min'},
+      {name:'Research Sprint Report',desc:'Summarise experiments, highlight findings, generate stakeholder brief',time:'~15 min'},
+      {name:'IP Filing Prep',desc:'Compile prior art, draft patent claims, brief legal for filing review',time:'~45 min'},
+    ],
+  },
+  customer_success:{
+    stats:[{l:'Accounts',v:'5',c:null},{l:'Avg NPS',v:'7.6',c:null},{l:'Total ARR',v:'$340k',c:null},{l:'At Risk',v:'1',c:'DeltaRetail',up:false}],
+    feat:'Which accounts are at risk of churning this quarter and what are the signals?',
+    prompts:['Show NPS scores and categories by account','Which accounts have open support tickets?','What is our renewal pipeline for next quarter?','Show health scores for all Enterprise accounts','List all Detractor NPS responses with verbatim'],
+    charts:[
+      {type:'bar',title:'Health Score by Account',id:'cv0',labels:['GammaMed','Acme','EpsiFin','BetaTech','DeltaRetail'],vals:[9.1,8.5,6.8,7.2,5.4]},
+      {type:'ring',title:'NPS Distribution',id:'cv1',labels:['Promoter','Passive','Detractor'],vals:[3,1,1],colors:['#22c55e','#eab308','#ef4444']},
+      {type:'bar',title:'ARR by Account ($k)',id:'cv2',labels:['GammaMed','Acme','EpsiFin','BetaTech','DeltaRetail'],vals:[120,85,65,42,28]},
+      {type:'line',title:'NPS Trend',id:'cv3',labels:['Q1 25','Q2 25','Q3 25','Q4 25','Q1 26','Q2 26'],vals:[6.8,7.0,7.2,7.4,7.5,7.6]},
+      {type:'bar',title:'Open Tickets by Account',id:'cv4',labels:['GammaMed','Acme','EpsiFin','BetaTech','DeltaRetail'],vals:[0,1,2,0,3]},
+    ],
+    skills:[
+      {cat:'Account Management',tags:['Health Scoring','QBR Preparation','Success Plans','Expansion Opportunities','At-Risk Playbooks']},
+      {cat:'Customer Insights',tags:['NPS & CSAT Analysis','Sentiment Analysis','Product Usage Analysis','Churn Prediction','Feedback Synthesis']},
+      {cat:'Onboarding & Adoption',tags:['Onboarding Plans','Milestone Tracking','Feature Adoption','Training Delivery','Documentation']},
+      {cat:'Renewals & Growth',tags:['Renewal Forecasting','Upsell Identification','Negotiation Support','Contract Extensions','Churn Prevention']},
+    ],
+    tools:[{a:'GS',n:'Gainsight',cat:'CS Platform'},{a:'IC',n:'Intercom',cat:'Support'},{a:'SF',n:'Salesforce',cat:'CRM'},{a:'ZD',n:'Zendesk',cat:'Tickets'},{a:'CZ',n:'ChurnZero',cat:'Churn Risk'},{a:'LO',n:'Looker',cat:'Analytics'}],
+    workflows:[
+      {name:'Account Health Review',desc:'Score all accounts, flag health drops, trigger at-risk playbook for CSMs',time:'~15 min'},
+      {name:'QBR Preparation',desc:'Compile usage metrics, ROI data, and success plan progress for the account',time:'~20 min'},
+      {name:'Renewal Risk Report',desc:'Identify renewal risks, ARR at risk, and recommended actions by account',time:'~10 min'},
+    ],
+  },
+};
+
+/* ── Helpers ── */
+function getUser(){try{return JSON.parse(localStorage.getItem('rapid_user'));}catch{return null;}}
+function doLogout(){localStorage.removeItem('rapid_token');localStorage.removeItem('rapid_user');window.location.href='index.html';}
+window.doLogout=doLogout;
+
+function applyAccent(d){
+  const r=document.documentElement;
+  r.style.setProperty('--dept-accent',d.accent);
+  r.style.setProperty('--dept-accent-dim',d.accent_dim);
+  r.style.setProperty('--dept-accent-border',d.accent_border);
+  r.style.setProperty('--dept-accent-shadow',d.accent_shadow);
+  const logo=document.getElementById('tnav-logo');
+  if(logo)logo.style.background=d.accent;
+}
+
+function hexToRgba(hex,a){
+  const n=parseInt(hex.replace('#',''),16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+
+/* ── Charts ── */
+function setupCanvas(el){
+  const dpr=window.devicePixelRatio||1;
+  const w=el.offsetWidth||el.parentElement?.offsetWidth||300;
+  const h=el.height||140;
+  el.width=w*dpr;el.height=h*dpr;
+  const ctx=el.getContext('2d');ctx.scale(dpr,dpr);
+  return{ctx,w,h:h};
+}
+
+function drawLine(el,labels,vals,accent){
+  const{ctx,w,h}=setupCanvas(el);
+  const p={t:14,r:14,b:26,l:36};
+  const cw=w-p.l-p.r,ch=h-p.t-p.b;
+  const mn=Math.min(...vals)*0.92,mx=Math.max(...vals)*1.08,rng=mx-mn||1;
+  const px=i=>p.l+(i/(vals.length-1))*cw;
+  const py=v=>p.t+ch-((v-mn)/rng)*ch;
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=p.t+(ch/4)*i;ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(p.l+cw,y);ctx.stroke();}
+  ctx.beginPath();ctx.moveTo(px(0),py(vals[0]));
+  for(let i=1;i<vals.length;i++){const mx2=(px(i-1)+px(i))/2;ctx.bezierCurveTo(mx2,py(vals[i-1]),mx2,py(vals[i]),px(i),py(vals[i]));}
+  ctx.lineTo(px(vals.length-1),p.t+ch);ctx.lineTo(px(0),p.t+ch);ctx.closePath();
+  const grad=ctx.createLinearGradient(0,p.t,0,p.t+ch);
+  grad.addColorStop(0,hexToRgba(accent,0.18));grad.addColorStop(1,hexToRgba(accent,0));
+  ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();ctx.moveTo(px(0),py(vals[0]));
+  for(let i=1;i<vals.length;i++){const mx2=(px(i-1)+px(i))/2;ctx.bezierCurveTo(mx2,py(vals[i-1]),mx2,py(vals[i]),px(i),py(vals[i]));}
+  ctx.strokeStyle=accent;ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+  ctx.font='9px system-ui,sans-serif';ctx.textAlign='center';
+  vals.forEach((v,i)=>{
+    ctx.beginPath();ctx.arc(px(i),py(v),3,0,Math.PI*2);
+    ctx.fillStyle=accent;ctx.fill();ctx.strokeStyle='#13131f';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='rgba(160,160,180,0.65)';ctx.fillText(labels[i],px(i),h-4);
+  });
+}
+
+function drawBars(el,labels,vals,accent){
+  const{ctx,w,h}=setupCanvas(el);
+  const p={t:10,r:10,b:30,l:8};
+  const n=labels.length,cw=w-p.l-p.r,ch=h-p.t-p.b;
+  const bw=Math.min(cw/n*0.52,26),gap=cw/n;
+  const mx=Math.max(...vals)*1.12||1;
+  ctx.font='9px system-ui,sans-serif';ctx.textAlign='center';
+  labels.forEach((lbl,i)=>{
+    const x=p.l+i*gap+gap/2,bh=((vals[i]||0)/mx)*ch,y=p.t+ch-bh;
+    ctx.fillStyle=hexToRgba(accent,0.85);
+    ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x-bw/2,y,bw,bh,3);else ctx.rect(x-bw/2,y,bw,bh);ctx.fill();
+    ctx.fillStyle='rgba(160,160,180,0.65)';ctx.fillText(lbl,x,h-4);
+  });
+}
+
+function drawDualBars(el,labels,vals,accent){
+  const{ctx,w,h}=setupCanvas(el);
+  const p={t:20,r:10,b:30,l:8};
+  const n=labels.length,cw=w-p.l-p.r,ch=h-p.t-p.b;
+  const gW=cw/n,bw=Math.min(gW*0.28,16);
+  const mx=Math.max(...vals.flat())*1.1||1;
+  ctx.font='9px system-ui,sans-serif';ctx.textAlign='center';
+  labels.forEach((lbl,i)=>{
+    const cx=p.l+i*gW+gW/2;
+    const bh1=((vals[i][0]||0)/mx)*ch;
+    ctx.fillStyle=hexToRgba(accent,0.25);
+    ctx.beginPath();if(ctx.roundRect)ctx.roundRect(cx-bw-1,p.t+ch-bh1,bw,bh1,2);else ctx.rect(cx-bw-1,p.t+ch-bh1,bw,bh1);ctx.fill();
+    const bh2=((vals[i][1]||0)/mx)*ch;
+    ctx.fillStyle=hexToRgba(accent,0.9);
+    ctx.beginPath();if(ctx.roundRect)ctx.roundRect(cx+1,p.t+ch-bh2,bw,bh2,2);else ctx.rect(cx+1,p.t+ch-bh2,bw,bh2);ctx.fill();
+    ctx.fillStyle='rgba(160,160,180,0.65)';ctx.fillText(lbl,cx,h-4);
+  });
+  ctx.fillStyle=hexToRgba(accent,0.3);ctx.fillRect(p.l,6,7,5);
+  ctx.fillStyle='rgba(150,150,170,0.7)';ctx.textAlign='left';ctx.fillText('Budget',p.l+10,12);
+  ctx.fillStyle=hexToRgba(accent,0.9);ctx.fillRect(p.l+54,6,7,5);ctx.fillText('Actual',p.l+64,12);
+}
+
+function drawRing(el,labels,vals,accent,customColors){
+  const{ctx,w,h}=setupCanvas(el);
+  const cx=w*0.38,cy=h*0.5,ro=Math.min(w*0.32,h*0.40),ri=ro*0.56;
+  const total=vals.reduce((a,b)=>a+b,0)||1;
+  const palette=customColors||[accent,'rgba(160,160,180,0.4)','rgba(100,100,120,0.4)','rgba(60,60,80,0.4)'];
+  let angle=-Math.PI/2;
+  vals.forEach((v,i)=>{
+    const sweep=(v/total)*Math.PI*2;
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,ro,angle,angle+sweep);ctx.closePath();
+    ctx.fillStyle=palette[i%palette.length];ctx.fill();
+    ctx.beginPath();ctx.arc(cx,cy,ri,0,Math.PI*2);ctx.fillStyle='#13131f';ctx.fill();
+    angle+=sweep;
+  });
+  const lx=w*0.70,ly=h/2-(labels.length*17)/2;
+  ctx.font='9px system-ui,sans-serif';
+  labels.forEach((lbl,i)=>{
+    ctx.fillStyle=palette[i%palette.length];ctx.fillRect(lx,ly+i*17,7,7);
+    ctx.fillStyle='rgba(160,160,180,0.75)';ctx.textAlign='left';ctx.fillText(lbl,lx+11,ly+i*17+7);
+  });
+}
+
+/* ── Render ── */
+function render(deptKey,user){
+  const d=DEPT[deptKey];
+  if(!d){renderMissing();return;}
+  const ex=EX[deptKey]||{stats:[],feat:'',prompts:[],charts:[],skills:[],tools:[],workflows:[]};
+  applyAccent(d);
+  document.title=d.name+' — RAPID';
+  document.getElementById('tnav-deptname').textContent=d.name;
+  const nm=user?.name||user?.username||'User';
+  const role=user?.role||'employee';
+  const permDepts=user?.permitted_departments||[deptKey];
+  document.getElementById('tnav-av').textContent=nm[0]?.toUpperCase()||'U';
+  document.getElementById('tnav-nm').textContent=nm;
+
+  const agentNodes=d.agents.map(a=>`<div class="htree-child">${a.name.replace(' Agent','')}</div>`).join('');
+  const htree=`<div class="htree rev" style="animation-delay:100ms">
+    <div class="htree-node">${d.division}</div>
+    <div class="htree-vline"></div>
+    <div class="htree-node curr">${d.name}</div>
+    <div class="htree-vline"></div>
+    <div class="htree-hrow">${agentNodes}</div>
+    <div class="htree-esc">Escalates to <strong>${d.escalates}</strong> at &lt;${d.threshold}% confidence</div>
+  </div>`;
+
+  const statCells=ex.stats.map((s,i)=>`<div class="stat-cell rev" style="animation-delay:${60+i*35}ms">
+    <div class="stat-lbl">${s.l}</div><div class="stat-val">${s.v}</div>
+    ${s.c?`<div class="stat-chg ${s.up===true?'up':s.up===false?'dn':'neu'}">${s.c}</div>`:'<div class="stat-chg neu">—</div>'}
+  </div>`).join('');
+
+  const charts3=ex.charts.slice(0,3).map((ch,i)=>`<div class="viz-cell rev" style="animation-delay:${160+i*45}ms">
+    <div class="viz-ttl">${ch.title}</div>
+    <canvas class="viz-canvas" id="${ch.id}" height="${i===0?145:130}"></canvas>
+  </div>`).join('');
+
+  const charts2=ex.charts.slice(3,5).map((ch,i)=>`<div class="viz-cell rev" style="animation-delay:${290+i*45}ms">
+    <div class="viz-ttl">${ch.title}</div>
+    <canvas class="viz-canvas" id="${ch.id}" height="130"></canvas>
+  </div>`).join('');
+
+  const skillCats=(ex.skills||[]).map(sc=>`<div>
+    <div class="skill-cat-h">${sc.cat}</div>
+    <div class="skill-tags">${sc.tags.map(t=>`<span class="stag">${t}</span>`).join('')}</div>
+  </div>`).join('');
+
+  const toolCards=(ex.tools||[]).map(t=>`<div class="tool-card">
+    <div class="tool-abbr">${t.a}</div>
+    <div><div class="tool-name">${t.n}</div><div class="tool-cat">${t.cat}</div></div>
+    <div class="tool-dot"></div>
+  </div>`).join('');
+
+  const wfCards=(ex.workflows||[]).map((w,i)=>`<button class="wf-card rev" style="animation-delay:${370+i*40}ms" onclick="fillQuery(${JSON.stringify('Run workflow: '+w.name)})">
+    <div class="wf-top"><div class="wf-name">${w.name}</div><div class="wf-time">${w.time}</div></div>
+    <div class="wf-desc">${w.desc}</div>
+    <div class="wf-run"><svg width="10" height="10"><use href="#ic-play"/></svg> Run with AI</div>
+  </button>`).join('');
+
+  const chips=(ex.prompts||[]).map((p,i)=>`<button class="pchip rev" style="animation-delay:${430+i*35}ms" onclick="fillQuery(${JSON.stringify(p)})">
+    <span class="pchip-n">${String(i+2).padStart(2,'0')}</span>${p}
+  </button>`).join('');
+
+  const agentRows=d.agents.map(a=>`<div class="agent-row">
+    <div class="agent-dot"></div>
+    <div><div class="agent-name">${a.name}</div><div class="agent-desc">${a.desc}</div></div>
+  </div>`).join('');
+
+  const dataRows=d.tables.map(t=>{
+    const am=ACCESS_META[t.access]||{label:t.access,cls:'access-read'};
+    return `<div class="data-row">
+      <div class="data-ico"><svg width="12" height="12"><use href="#ic-db"/></svg></div>
+      <div style="flex:1;min-width:0"><div class="data-name">${t.name}</div><div class="data-desc">${t.desc}</div></div>
+      <span class="access-pill ${am.cls}">${am.label}</span>
+    </div>`;}).join('');
+
+  const peerCards=d.peers.map(p=>`<a class="peer-card" href="dept.html?dept=${p.id}">
+    <div class="peer-name">${p.name}</div><div class="peer-reason">${p.reason}</div>
+  </a>`).join('');
+
+  const deptPills=permDepts.slice(0,4).map(dp=>`<span class="ustrip-pill">${dp}</span>`).join('');
+  const extra=permDepts.length-4;
+  const extraPill=extra>0?`<span class="ustrip-pill mut">+${extra} more</span>`:'';
+
+  const root=document.getElementById('dept-root');
+  root.innerHTML=`
+  <div class="ustrip rev" style="animation-delay:0ms">
+    <div class="ustrip-av">${nm[0]?.toUpperCase()||'U'}</div>
+    <div><div class="ustrip-name">${nm}</div><div class="ustrip-meta">${role} · ${d.name}</div></div>
+    <div class="ustrip-pills">${deptPills}${extraPill}</div>
+    <div class="ustrip-platform"><div class="ustrip-pdot"></div>RAPID · AI-powered · Private data</div>
+  </div>
+  <div class="brief-bar rev" style="animation-delay:15ms">
+    <div class="brief-icon"><svg width="13" height="13"><use href="#ic-cpu"/></svg></div>
+    <div class="brief-text"><strong>RAPID</strong> connects your department's live databases, documents, and workflows to AI agents. Ask in plain English — agents only access what your role permits.</div>
+    <button class="brief-dismiss" onclick="this.closest('.brief-bar').remove()">Dismiss</button>
+  </div>
+  <div class="dhero rev" style="animation-delay:45ms">
+    <div>
+      <div class="dhero-eyebrow">
+        <span class="dhero-live"><span class="dhero-ldot"></span>Live</span>
+        <span class="dhero-divbadge">${d.division}</span>
+      </div>
+      <h1 class="dhero-h1">${d.name}</h1>
+      <p class="dhero-desc">${d.description}</p>
+      <div class="dhero-meta">
+        <span class="dhero-mi"><strong>${d.agents.length}</strong> agents</span>
+        <span class="dhero-sep">·</span>
+        <span class="dhero-mi"><strong>${d.tables.length}</strong> data tables</span>
+        <span class="dhero-sep">·</span>
+        <span class="dhero-mi"><strong>${d.docs.length}</strong> doc sources</span>
+        <span class="dhero-sep">·</span>
+        <span class="dhero-mi"><strong>${(ex.skills||[]).reduce((a,s)=>a+s.tags.length,0)}</strong> skills</span>
+        <span class="dhero-sep">·</span>
+        <span class="dhero-mi">Threshold <strong>${d.threshold}%</strong></span>
+      </div>
+    </div>
+    ${htree}
+  </div>
+  <div class="stats-row">${statCells}</div>
+  <div class="viz-wrap l3">${charts3}</div>
+  <div class="viz-wrap l2">${charts2}</div>
+  <div class="skills-wrap rev" style="animation-delay:190ms">
+    <div class="sec-h">Skills &amp; Expertise</div>
+    <div class="sec-sub">Areas this department's AI agents are trained on — hover any skill to explore</div>
+    <div class="skills-grid">${skillCats}</div>
+  </div>
+  <div class="tools-wrap rev" style="animation-delay:230ms">
+    <div class="sec-h">Tools &amp; Integrations</div>
+    <div class="sec-sub">Connected platforms and data sources — all queried through RAPID agents</div>
+    <div class="tools-row">${toolCards}</div>
+  </div>
+  <div class="wf-wrap rev" style="animation-delay:270ms">
+    <div class="sec-h">Department Playbooks</div>
+    <div class="sec-sub">AI-assisted workflows — click any to pre-fill and run with your agents</div>
+    <div class="wf-grid">${wfCards}</div>
+  </div>
+  <div class="prompts-wrap rev" style="animation-delay:310ms">
+    <div class="sec-h">What You Can Do Here</div>
+    <div class="sec-sub">Ask your agents in plain English — click any prompt to try it</div>
+    <div class="prompt-feat" onclick="fillQuery(${JSON.stringify(ex.feat)})">
+      <div class="pf-ico"><svg width="14" height="14"><use href="#ic-cpu"/></svg></div>
+      <div style="flex:1;min-width:0"><div class="pf-label">Featured query</div><div class="pf-q">${ex.feat}</div></div>
+      <div class="pf-arr"><svg width="14" height="14"><use href="#ic-arr"/></svg></div>
+    </div>
+    <div class="prompts-grid">${chips}</div>
+  </div>
+  <div class="roster-wrap">
+    <div class="roster-cell rev" style="animation-delay:350ms">
+      <div class="roster-ttl">AI Sub-Agents</div>
+      ${agentRows}
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="roster-ttl">Document Sources</div>
+        ${d.docs.map(doc=>`<span class="doc-tag">${doc}</span>`).join('')}
+      </div>
+    </div>
+    <div class="roster-cell rev" style="animation-delay:370ms">
+      <div class="roster-ttl">Data Access</div>${dataRows}
+    </div>
+  </div>
+  <div class="peers-wrap rev" style="animation-delay:390ms">
+    <div class="sec-h">Peer Connections</div>
+    <div class="sec-sub">Departments consulted when agent confidence drops below ${d.threshold}%</div>
+    <div class="peers-flow">
+      <div class="peer-src">${d.short}<div style="font-size:9px;opacity:.65;font-weight:400;margin-top:1px">origin</div></div>
+      <div class="peer-arr">→</div>${peerCards}
+    </div>
+  </div>
+  `;
+
+  const ab=document.getElementById('action-bar');
+  ab.style.display='flex';
+  ab.innerHTML=`
+    <button class="btn-ask" onclick="askAgent()"><svg width="13" height="13"><use href="#ic-cpu"/></svg>Ask ${d.short} Agent</button>
+    <button class="btn-act" onclick="window.location.href='app.html#projects'"><svg width="13" height="13"><use href="#ic-folder"/></svg>New Project</button>
+    <button class="btn-act" onclick="window.location.href='app.html#search'"><svg width="13" height="13"><use href="#ic-bar"/></svg>Reports</button>
+    <button class="btn-act" onclick="window.location.href='app.html#chat'"><svg width="13" height="13"><use href="#ic-chat"/></svg>AI Chat</button>
+    <button class="btn-esc" onclick="alert('Escalation queued for ${d.escalates}.')"><svg width="12" height="12"><use href="#ic-arr"/></svg>Escalate to ${d.escalates}</button>`;
+
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    ex.charts.forEach(ch=>{
+      const el=document.getElementById(ch.id);if(!el)return;
+      switch(ch.type){
+        case'line':drawLine(el,ch.labels,ch.vals,d.accent);break;
+        case'bar':drawBars(el,ch.labels,ch.vals,d.accent);break;
+        case'dualbar':drawDualBars(el,ch.labels,ch.vals,d.accent);break;
+        case'ring':drawRing(el,ch.labels,ch.vals,d.accent,ch.colors);break;
+      }
+    });
+  }));
+}
+
+function renderMissing(){
+  document.getElementById('dept-root').innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:320px;flex-direction:column;gap:12px;color:var(--text-muted)">
+    <div style="font-size:15px;font-weight:600;color:var(--text)">No Department Found</div>
+    <div style="font-size:13px;text-align:center;max-width:320px;line-height:1.65">Your account isn't assigned to a department, or the department key is invalid.</div>
+    <a href="dept.html?dept=finance" style="margin-top:8px;padding:8px 18px;border:1px solid var(--border);border-radius:var(--r-md);font-size:13px;color:var(--text-dim);text-decoration:none">Browse Finance →</a>
+  </div>`;
+}
+
+function fillQuery(q){document.getElementById('quick-q').value=q;document.getElementById('quick-q').focus();}
+function askAgent(){const q=document.getElementById('quick-q').value.trim();if(q)sessionStorage.setItem('chat_prefill',q);window.location.href='app.html#chat';}
+window.fillQuery=fillQuery;window.askAgent=askAgent;
+
+(function init(){
+  if(!localStorage.getItem('rapid_token')){window.location.href='index.html';return;}
+  const user=getUser()||{};
+  const urlDept=new URLSearchParams(window.location.search).get('dept');
+  const permDepts=user.permitted_departments||[];
+  const deptKey=urlDept||permDepts[0]||null;
+  if(deptKey)render(deptKey,user);else renderMissing();
+})();
+})();
+</script>
+</body>
+</html>
