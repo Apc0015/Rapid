@@ -158,9 +158,14 @@ class GovernanceEngine:
                 verdicts.append(FieldVerdict(field_name, "ALLOW", "dept_allow"))
                 continue
 
-            # Default — allow if not in any block list
-            governed[field_name] = value
-            verdicts.append(FieldVerdict(field_name, "ALLOW", "default"))
+            # Default posture. If the dept declares an allow-list, anything not on
+            # it is denied (deny-by-default). If no allow-list is configured the
+            # dept is ungoverned, so preserve the legacy allow.
+            if allow_cols:
+                verdicts.append(FieldVerdict(field_name, "BLOCK", "default_deny"))
+            else:
+                governed[field_name] = value
+                verdicts.append(FieldVerdict(field_name, "ALLOW", "default_ungoverned"))
 
         return governed, verdicts
 

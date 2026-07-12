@@ -138,11 +138,15 @@ class TestApplyRules:
         governed, log = gov.apply_rules(result, rs)
         assert governed.get("bonus") == 7000
 
-    def test_unknown_column_defaults_to_allow(self, gov):
+    def test_unknown_column_denied_by_default(self, gov):
+        # Deny-by-default: a column with no explicit rule is BLOCKed, not exposed.
         rs = gov.load_rules("jake", "finance", user_role="employee")
         result = {"mystery_column": "some_value"}
         governed, log = gov.apply_rules(result, rs)
-        assert governed.get("mystery_column") == "some_value"
+        assert "mystery_column" not in governed
+        actions = {e["field"]: e["action"] for e in log}
+        assert actions["mystery_column"] == "BLOCK"
+        assert log[0]["via"] == "default"
 
     def test_audit_log_entries_created(self, gov):
         rs = gov.load_rules("kate", "finance", user_role="employee")
@@ -157,6 +161,48 @@ class TestApplyRules:
         governed, log = gov.apply_rules({}, rs)
         assert governed == {}
         assert log == []
+
+
+# ── Default posture (Article 0) ───────────────────────────────────────────────
+
+class TestDefaultAction:
+
+    def test_default_is_block_when_unset(self, gov):
+        # Test constitution has no governance.default_action → deny-by-default.
+        assert gov.default_action == "BLOCK"
+
+    def test_default_allow_override_exposes_unlisted(self, tmp_path):
+        from agents.system.governance_filter import GovernanceFilter
+        p = tmp_path / "c.yaml"
+        p.write_text(textwrap.dedent("""
+            governance:
+              default_action: ALLOW
+            column_permissions:
+              finance:
+                salaries:
+                  salary: BLOCK
+        """))
+        g = GovernanceFilter(constitution_path=str(p))
+        assert g.default_action == "ALLOW"
+        rs = g.load_rules("u", "finance", user_role="employee")
+        governed, _ = g.apply_rules({"mystery": "v"}, rs)
+        assert governed.get("mystery") == "v"   # opt-in fail-open works
+
+    def test_invalid_default_fails_closed_to_block(self, tmp_path):
+        from agents.system.governance_filter import GovernanceFilter
+        p = tmp_path / "c.yaml"
+        p.write_text("governance:\n  default_action: bogus\ncolumn_permissions: {}\n")
+        g = GovernanceFilter(constitution_path=str(p))
+        assert g.default_action == "BLOCK"
+
+    def test_no_constitution_allows_dev_mode(self, tmp_path):
+        # No constitution file → governance disabled (dev) → allow, not block.
+        from agents.system.governance_filter import GovernanceFilter
+        g = GovernanceFilter(constitution_path=str(tmp_path / "nope.yaml"))
+        assert g.default_action == "ALLOW"
+        rs = g.load_rules("u", "finance", user_role="employee")
+        governed, _ = g.apply_rules({"anything": "v"}, rs)
+        assert governed.get("anything") == "v"
 
 
 # ── Department boundaries ─────────────────────────────────────────────────────

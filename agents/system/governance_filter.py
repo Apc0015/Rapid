@@ -66,6 +66,33 @@ class GovernanceFilter:
             for entry in agg_entries
             if "column" in entry and "method" in entry
         }
+        # Default action for columns with no explicit rule (Article 0).
+        self.default_action: str = self._resolve_default_action()
+
+    def _resolve_default_action(self) -> str:
+        """
+        Resolve what happens to an unlisted column.
+        - No constitution loaded (dev / missing file): governance is disabled, so
+          allow (matches the loud warning already emitted by _load_constitution).
+        - Constitution present: honor governance.default_action, defaulting to
+          BLOCK (deny-by-default). Invalid values fail closed to BLOCK.
+        """
+        if not self.constitution:
+            return "ALLOW"
+        raw = str(
+            self.constitution.get("governance", {}).get("default_action", "BLOCK")
+        ).upper()
+        if raw not in ("ALLOW", "ANONYMIZE", "BLOCK"):
+            logger.warning(
+                f"governance.default_action='{raw}' is invalid — failing closed to BLOCK"
+            )
+            return "BLOCK"
+        if raw == "ALLOW":
+            logger.warning(
+                "governance.default_action=ALLOW — unlisted columns are exposed to "
+                "every role (fail-open). BLOCK is recommended for production."
+            )
+        return raw
 
     # ── Rule loading ──────────────────────────────────────────────────────────
 
@@ -156,12 +183,14 @@ class GovernanceFilter:
         log = []
 
         for field, value in result.items():
-            rule = rule_set.column_rules.get(field, "ALLOW")
+            explicit = field in rule_set.column_rules
+            rule = rule_set.column_rules.get(field, self.default_action)
             user_role = rule_set.user_role
+            via = "explicit" if explicit else "default"
 
             if rule == "ALLOW":
                 governed[field] = value
-                log.append({"field": field, "action": "ALLOW"})
+                log.append({"field": field, "action": "ALLOW", "via": via})
 
             elif rule == "ANONYMIZE":
                 method = self._agg_method.get(field)
@@ -175,11 +204,11 @@ class GovernanceFilter:
                     # Default fallback: no aggregation_required entry for this column
                     governed[field] = "[ANONYMIZED]"
                 log.append({"field": field, "action": "ANONYMIZE",
-                             "method": method or "default"})
+                             "method": method or "default", "via": via})
 
             elif rule == "BLOCK":
-                log.append({"field": field, "action": "BLOCK", "severity": "HIGH"})
-                self._audit_actions.append({"field": field, "action": "BLOCK", "role": user_role})
+                log.append({"field": field, "action": "BLOCK", "severity": "HIGH", "via": via})
+                self._audit_actions.append({"field": field, "action": "BLOCK", "role": user_role, "via": via})
 
             elif rule.startswith("ALLOW_"):
                 suffix   = rule.split("_", 1)[1].lower()
@@ -187,14 +216,15 @@ class GovernanceFilter:
                 allowed  = ALLOW_ROLE_MAP.get(suffix, {suffix, "admin"})
                 if user_role.lower() in allowed:
                     governed[field] = value
-                    log.append({"field": field, "action": "ALLOW_ROLE", "rule": rule})
+                    log.append({"field": field, "action": "ALLOW_ROLE", "rule": rule, "via": via})
                 else:
-                    log.append({"field": field, "action": "BLOCK_ROLE", "severity": "MEDIUM", "rule": rule})
+                    log.append({"field": field, "action": "BLOCK_ROLE", "severity": "MEDIUM", "rule": rule, "via": via})
                     self._audit_actions.append({"field": field, "action": "BLOCK_ROLE", "role": user_role, "rule": rule})
 
             else:
-                governed[field] = value
-                log.append({"field": field, "action": "ALLOW_DEFAULT"})
+                # Unknown / malformed rule string — fail closed (deny-by-default).
+                log.append({"field": field, "action": "BLOCK_UNKNOWN", "severity": "HIGH", "rule": rule, "via": via})
+                self._audit_actions.append({"field": field, "action": "BLOCK_UNKNOWN", "role": user_role, "rule": rule})
 
         return governed, log
 

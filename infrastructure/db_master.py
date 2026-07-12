@@ -265,10 +265,16 @@ class DBMaster:
         col_rules = self._get_column_rules(dept_tag, user_permissions)
         governed, governance_log = [], []
 
+        # Deny-by-default: columns with no explicit rule follow the constitution's
+        # Article 0 default_action (BLOCK unless overridden). Single source of truth
+        # is the GovernanceFilter so the DB path and the agent-output path agree.
+        from agents.system.governance_filter import get_governance
+        default_action = get_governance().default_action
+
         for row in raw_results:
             new_row = {}
             for col, val in row.items():
-                rule = col_rules.get(col, "ALLOW")
+                rule = col_rules.get(col, default_action)
                 if rule == "ALLOW":
                     new_row[col] = val
                     governance_log.append({"col": col, "action": "ALLOW"})

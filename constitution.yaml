@@ -3,6 +3,16 @@
 # Supreme governance document. Loaded once at startup. No agent can override it.
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── Article 0: Default Posture ────────────────────────────────────────────────
+# What happens to a column that has NO explicit rule below.
+# BLOCK    — deny-by-default (recommended). Any column you want visible must be
+#            listed explicitly under column_permissions. Safe: a new column added
+#            to a table stays hidden until you allow it.
+# ALLOW    — fail-open (legacy). Unlisted columns are exposed to every role.
+# ANONYMIZE— unlisted columns are masked rather than shown or hidden.
+governance:
+  default_action: BLOCK
+
 # ── Article 1: Access Control ─────────────────────────────────────────────────
 # Which user roles can query which departments.
 access_control:
