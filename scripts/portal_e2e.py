@@ -47,7 +47,7 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         desktop.wait_for_url("**/workspace/overview")
         desktop.wait_for_selector("#organization-name")
         assert desktop.locator("#organization-name").inner_text() == "Northstar Labs"
-        assert desktop.locator(".portal-nav [data-view]").count() == 11
+        assert desktop.locator(".portal-nav [data-view]").count() == 12
         assert desktop.locator("#root").get_attribute("data-reactroot") is None
         desktop.fill("#intelligence-question", "What is the Atlas renewal risk?")
         desktop.click(".intelligence-submit")
@@ -80,6 +80,11 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         desktop.select_option("#report-department", "sales")
         desktop.click("#generate-report")
         desktop.wait_for_selector("#report-output .report-metrics")
+        desktop.click('.portal-nav [data-view="library"]')
+        desktop.wait_for_selector("#library-search-form")
+        desktop.wait_for_selector('[data-portal-view="library"] .library-layout')
+        assert_accessible(desktop, "organization library")
+        desktop.screenshot(path=str(output / "desktop-library.png"), full_page=True)
         desktop.click('.portal-nav [data-view="search"]')
         desktop.fill("#global-search-input", "Atlas")
         desktop.click('#global-search-form button[type="submit"]')

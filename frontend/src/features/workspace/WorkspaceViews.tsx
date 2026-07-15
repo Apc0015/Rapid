@@ -1,4 +1,4 @@
-import { ArrowUpRight, Search as SearchIcon } from 'lucide-react';
+import { ArrowUpRight, BookOpen, FileText, RefreshCw, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { DEPARTMENTS, type WorkspaceView } from '../../constants';
 import { apiRequest, getProfile } from '../../lib/api';
@@ -6,9 +6,14 @@ import { formatDate, formatTime, formatValue, initials } from '../../lib/format'
 import type {
   ActionItem,
   BusinessRecord,
+  AgentSkill,
+  LibraryDocument,
   Meeting,
   NotificationItem,
   OperatingReport,
+  ProjectHealth,
+  ProjectIntelligenceAnswer,
+  RegisteredProject,
   SearchResult,
   WorkspaceData,
 } from '../../types';
@@ -122,10 +127,125 @@ export function CrmView({ data }: WorkspaceViewProps) {
   return <section className="portal-view active" data-portal-view="crm"><div className="toolbar"><SegmentedControl id="crm-filter" value={type} onChange={setType} options={[[ 'all', 'All records' ], [ 'customer', 'Customers' ], [ 'lead', 'Leads' ], [ 'deal', 'Deals' ]]} /><span id="crm-total" className="result-count">{countLabel(records.length, 'CRM record')}</span></div><div id="crm-list" className="entity-grid">{records.length ? records.map((record) => <EntityCard key={record.id} record={record} fields={['segment', 'stage', 'health', 'owner', 'arr', 'value', 'renewal']} />) : <EmptyState>No CRM records match this view.</EmptyState>}</div></section>;
 }
 
+function projectDepartment(project: RegisteredProject): string {
+  return DEPARTMENTS[project.primary_dept_id ?? ''] ?? project.primary_dept_id ?? 'Organization-wide';
+}
+
+function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
+  const [selectedId, setSelectedId] = useState('');
+  const [health, setHealth] = useState<ProjectHealth | null>(null);
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [question, setQuestion] = useState('');
+  const [mode, setMode] = useState('analysis');
+  const [answer, setAnswer] = useState<ProjectIntelligenceAnswer | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  useEffect(() => { if (!selectedId && projects[0]) setSelectedId(projects[0].project_id); }, [projects, selectedId]);
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    setLoading(true); setError(''); setHealth(null); setSkills([]); setAnswer(null);
+    void Promise.all([
+      apiRequest<{ health: ProjectHealth }>(`/projects/${selectedId}/status`),
+      apiRequest<{ skills: AgentSkill[] }>(`/projects/${selectedId}/skills/available`),
+    ]).then(([healthResponse, skillResponse]) => {
+      if (!active) return;
+      setHealth(healthResponse.health); setSkills(skillResponse.skills);
+    }).catch((issue) => {
+      if (active) setError(issue instanceof Error ? issue.message : 'Project intelligence could not load.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [selectedId]);
+
+  async function askProject(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedId || !question.trim()) return;
+    setAsking(true); setError(''); setAnswer(null);
+    try {
+      const result = await apiRequest<ProjectIntelligenceAnswer>(`/projects/${selectedId}/query`, {
+        method: 'POST', body: JSON.stringify({ query: question.trim(), mode }),
+      });
+      setAnswer(result);
+    } catch (issue) { setError(issue instanceof Error ? issue.message : 'The project agent could not complete that request.'); }
+    finally { setAsking(false); }
+  }
+
+  if (!projects.length) return <section className="workspace-section project-intelligence-empty"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Project-aware agents activate after a project data space is provisioned.</p></div><Sparkles size={17} className="section-icon" /></div><EmptyState>No governed projects are connected to this tenant yet.</EmptyState></section>;
+
+  const selected = projects.find((project) => project.project_id === selectedId);
+  const leadRisk = health?.open_risks?.[0];
+  return <section className="workspace-section project-intelligence"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Ask a scoped agent, review live health, and use only skills permitted for the selected project.</p></div><Sparkles size={17} className="section-icon" /></div>
+    <div className="project-intelligence-layout">
+      <div className="project-registry" role="list" aria-label="Registered projects">{projects.map((project) => <button className={project.project_id === selectedId ? 'selected' : ''} key={project.project_id} type="button" onClick={() => setSelectedId(project.project_id)}><span><strong>{project.name}</strong><small>{projectDepartment(project)} · {project.member_role ?? 'member'}</small></span><StatusTag value={project.status} /></button>)}</div>
+      <div className="project-intelligence-detail">
+        {loading ? <LoadingState compact /> : error ? <div className="portal-error"><strong>Project intelligence is unavailable.</strong><p>{error}</p></div> : selected ? <>
+          <div className="project-health-head"><div><h3>{selected.name}</h3><p>{selected.description || `${projectDepartment(selected)} project workspace`}</p></div><div><StatusTag value={selected.priority} /><StatusTag value={selected.status} /></div></div>
+          {health?.status ? <div className="project-data-note">{health.message || 'This project data space is ready for configuration.'}</div> : <div className="project-health-grid">{health?.kpis?.slice(0, 3).map((kpi) => <article key={kpi.kpi_name}><span>{kpi.kpi_name}</span><strong>{formatValue('value', kpi.current_value)}</strong><small>{kpi.target_value === null || kpi.target_value === undefined ? kpi.status : `Target ${formatValue('value', kpi.target_value)}`}</small></article>)}{leadRisk ? <article><span>Open risks</span><strong>{health?.open_risks?.length}</strong><small>{leadRisk.title}</small></article> : null}</div>}
+          <form id="project-intelligence-form" className="project-query-form" onSubmit={askProject}><label><span>Ask about this project</span><textarea id="project-intelligence-question" value={question} onChange={(event) => setQuestion(event.target.value)} minLength={2} required placeholder="Identify the current delivery risks" /></label><div><select aria-label="Project analysis mode" value={mode} onChange={(event) => setMode(event.target.value)}><option value="query">Question</option><option value="analysis">Analysis</option><option value="planning">Plan</option><option value="reporting">Report</option></select><button className="product-button primary" type="submit" disabled={asking}>{asking ? 'Analyzing…' : 'Ask project agent'}</button></div></form>
+          {answer ? <section id="project-intelligence-output" className="project-answer"><div><strong>Scoped answer</strong><span>{Math.round(answer.confidence * 100)}% confidence · {answer.agent_used.replaceAll('_', ' ')}</span></div><p>{answer.answer}</p>{answer.data_gaps.length ? <small>Data gaps: {answer.data_gaps.join(' · ')}</small> : null}</section> : null}
+          <div className="project-skills"><div><h3>Available agent skills</h3><p>{skills.length} skills are permitted for this project’s department.</p></div><ul>{skills.slice(0, 6).map((skill) => <li key={skill.skill_id}><span><strong>{skill.skill_id.replaceAll('_', ' ')}</strong><small>{skill.description || 'Generated output with review controls.'}</small></span><em>{skill.output_format}</em></li>)}</ul></div>
+        </> : null}
+      </div>
+    </div>
+  </section>;
+}
+
 export function ProjectsView({ data }: WorkspaceViewProps) {
   const [query, setQuery] = useState('');
+  const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
+  const [registryError, setRegistryError] = useState('');
+  const [registryLoading, setRegistryLoading] = useState(true);
   const projects = data.records.filter((record) => record.entity_type === 'project').filter((record) => `${record.name} ${JSON.stringify(record.data)}`.toLowerCase().includes(query.toLowerCase()));
-  return <section className="portal-view active" data-portal-view="projects"><div className="toolbar"><label className="filter-input"><span>Filter projects</span><input id="project-filter" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Project, owner, or status" /></label><span id="project-total" className="result-count">{countLabel(projects.length, 'project')}</span></div><div id="projects-list" className="entity-grid">{projects.length ? projects.map((record) => <EntityCard key={record.id} record={record} fields={['status', 'owner', 'target']} />) : <EmptyState>No projects match this filter.</EmptyState>}</div></section>;
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ projects: RegisteredProject[] }>('/projects').then((response) => {
+      if (active) setRegisteredProjects(response.projects);
+    }).catch((issue) => { if (active) setRegistryError(issue instanceof Error ? issue.message : 'Project registry could not load.'); })
+      .finally(() => { if (active) setRegistryLoading(false); });
+    return () => { active = false; };
+  }, []);
+  return <section className="portal-view active" data-portal-view="projects"><div className="toolbar"><label className="filter-input"><span>Filter demo projects</span><input id="project-filter" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Project, owner, or status" /></label><span id="project-total" className="result-count">{countLabel(projects.length, 'demo project')}</span></div><div id="projects-list" className="entity-grid">{projects.length ? projects.map((record) => <EntityCard key={record.id} record={record} fields={['status', 'owner', 'target']} />) : <EmptyState>No projects match this filter.</EmptyState>}</div><div id="project-registry-status" aria-live="polite">{registryLoading ? <LoadingState compact /> : registryError ? <div className="portal-error"><strong>Project registry unavailable.</strong><p>{registryError}</p></div> : <ProjectIntelligence projects={registeredProjects} />}</div></section>;
+}
+
+export function LibraryView() {
+  const [documents, setDocuments] = useState<LibraryDocument[]>([]);
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const { notify } = useToast();
+
+  async function load(search = '') {
+    setLoading(true); setError('');
+    const libraryPath = search.trim() ? `/library/search?q=${encodeURIComponent(search.trim())}` : '/library';
+    const [libraryResult, skillResult] = await Promise.allSettled([
+      apiRequest<{ documents: LibraryDocument[] }>(libraryPath),
+      apiRequest<{ skills: AgentSkill[] }>('/skills/catalog'),
+    ]);
+    if (libraryResult.status === 'fulfilled') setDocuments(libraryResult.value.documents);
+    else setError(libraryResult.reason instanceof Error ? libraryResult.reason.message : 'Document library could not load.');
+    if (skillResult.status === 'fulfilled') setSkills(skillResult.value.skills);
+    else if (libraryResult.status !== 'rejected') setError(skillResult.reason instanceof Error ? skillResult.reason.message : 'Skill catalog could not load.');
+    setLoading(false);
+  }
+
+  useEffect(() => { void load(); }, []);
+  async function search(event: FormEvent) { event.preventDefault(); await load(query); }
+  async function syncLibrary() {
+    setSyncing(true);
+    try { const result = await apiRequest<{ message: string }>('/library/sync', { method: 'POST' }); notify(result.message); await load(query); }
+    catch (issue) { notify(issue instanceof Error ? issue.message : 'Library sync could not start.'); }
+    finally { setSyncing(false); }
+  }
+
+  return <section className="portal-view active" data-portal-view="library"><div className="library-toolbar"><form id="library-search-form" className="filter-input" onSubmit={search}><label><span>Search documents</span><input id="library-search-input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Title, report type, department" /></label><button className="icon-button icon-only" type="submit" aria-label="Search library" title="Search library"><SearchIcon size={15} /></button></form><div><button className="icon-button icon-only" type="button" aria-label="Reload library" title="Reload library" onClick={() => void load(query)}><RefreshCw size={14} /></button><button id="sync-library" className="product-button secondary" type="button" disabled={syncing} onClick={() => void syncLibrary()}>{syncing ? 'Syncing…' : 'Sync library'}</button></div></div>
+    {error ? <div className="portal-error library-error"><strong>Library service unavailable.</strong><p>{error}</p></div> : null}
+    <div className="library-layout"><section className="workspace-section library-documents"><div className="section-title"><div><p className="section-context">Approved organization knowledge</p><h2>Documents</h2><p>Files remain tenant-scoped and preserve the project or department that produced them.</p></div><FileText size={17} className="section-icon" /></div>{loading ? <LoadingState compact /> : documents.length ? <div className="table-scroll" role="region" aria-label="Document library" tabIndex={0}><table className="portal-table"><thead><tr><th>Document</th><th>Source</th><th>Format</th><th>Access</th><th>Created</th></tr></thead><tbody id="library-documents">{documents.map((document) => <tr key={document.doc_id}><td><strong>{document.title}</strong><small>{document.report_type || 'Agent-generated document'}</small></td><td>{document.dept_id ? DEPARTMENTS[document.dept_id] ?? document.dept_id : document.project_id ?? 'Organization'}</td><td><span className="format-tag">{document.file_format}</span></td><td><StatusTag value={document.access_level} /></td><td>{formatDate(document.created_at, false)}</td></tr>)}</tbody></table></div> : <EmptyState>{query ? 'No approved documents match this search.' : 'No approved documents have been added yet.'}</EmptyState>}</section>
+      <section className="workspace-section skill-catalog"><div className="section-title"><div><p className="section-context">Agent capabilities</p><h2>Skill catalog</h2><p>Output stays under human review before distribution.</p></div><BookOpen size={17} className="section-icon" /></div>{loading ? <LoadingState compact /> : skills.length ? <div id="skill-catalog" className="skill-list">{skills.map((skill) => <article key={skill.skill_id}><div><strong>{skill.skill_id.replaceAll('_', ' ')}</strong><p>{skill.description || 'A governed project agent skill.'}</p><small>{skill.dept_id === 'all' ? 'Available to every department' : DEPARTMENTS[skill.dept_id] ?? skill.dept_id}</small></div><span>{skill.output_format}</span></article>)}</div> : <EmptyState>No skills are available in this tenant.</EmptyState>}</section></div>
+  </section>;
 }
 
 export function TicketsView({ data }: WorkspaceViewProps) {
@@ -188,6 +308,7 @@ export const WORKSPACE_VIEW_COMPONENTS = {
   tickets: TicketsView,
   departments: DepartmentsView,
   reports: ReportsView,
+  library: LibraryView,
   search: SearchView,
   notifications: NotificationsView,
   settings: SettingsView,

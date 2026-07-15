@@ -177,3 +177,59 @@ export interface OrganizationUnit {
   department_key: string | null;
   members: unknown[];
 }
+
+export interface RegisteredProject {
+  project_id: string;
+  name: string;
+  description?: string | null;
+  primary_dept_id?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  project_type?: string | null;
+  target_end_date?: string | null;
+  member_role?: string | null;
+}
+
+export interface ProjectHealth {
+  status?: string;
+  message?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  kpis?: Array<{ kpi_name: string; current_value: string | number | null; target_value: string | number | null; status: string; unit?: string | null }>;
+  upcoming_milestones?: Array<{ name: string; due_date?: string | null; status: string }>;
+  open_risks?: Array<{ title: string; probability?: string | number | null; impact?: string | number | null; status: string }>;
+}
+
+export interface AgentSkill {
+  skill_id: string;
+  dept_id: string;
+  description: string;
+  output_format: string;
+  triggers?: string[];
+}
+
+export interface LibraryDocument {
+  doc_id: string;
+  title: string;
+  file_format: string;
+  project_id?: string | null;
+  report_type?: string | null;
+  produced_by?: string | null;
+  dept_id?: string | null;
+  access_level: string;
+  page_count?: number;
+  status: string;
+  created_at: string;
+  download_url?: string;
+}
+
+export interface ProjectIntelligenceAnswer {
+  query_id: string;
+  answer: string;
+  confidence: number;
+  sources: string[];
+  data_gaps: string[];
+  mode_used: string;
+  duration_ms: number;
+  agent_used: string;
+  domain_intent: string;
+}

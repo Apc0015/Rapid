@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bell,
+  BookOpen,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -46,6 +47,7 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
   ] },
   { label: 'Intelligence', items: [
     { view: 'reports', label: 'Reports', icon: BarChart3 },
+    { view: 'library', label: 'Library', icon: BookOpen },
     { view: 'search', label: 'Search', icon: Search },
     { view: 'notifications', label: 'Notifications', icon: Bell },
   ] },
