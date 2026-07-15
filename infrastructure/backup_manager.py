@@ -20,12 +20,10 @@ Config is read from .env; can also be updated at runtime via BackupManager API
 (admin stores preferences in data/backup_config.json).
 """
 
-import gzip
 import io
 import json
 import logging
 import os
-import shutil
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -144,7 +142,7 @@ class BackupManager:
         logger.info(f"[backup] Starting backup → {filename}")
 
         # Build archive in memory
-        archive_bytes = self._create_archive(filename)
+        archive_bytes = self._create_archive()
         size_kb       = len(archive_bytes) // 1024
         logger.info(f"[backup] Archive built: {size_kb} KB")
 
@@ -193,7 +191,7 @@ class BackupManager:
 
     # ── Archive builder ───────────────────────────────────────────────────────
 
-    def _create_archive(self, archive_name: str) -> bytes:
+    def _create_archive(self) -> bytes:
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             for path in _BACKUP_PATHS:

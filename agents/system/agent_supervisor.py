@@ -12,8 +12,6 @@ AgentRepresentative:
   On approval: calls registry.register_dept() to onboard at runtime — no restart needed.
 """
 
-import asyncio
-import json
 import logging
 import sqlite3
 import uuid
@@ -342,7 +340,6 @@ class AgentRepresentative:
           - Uses keyword-based bidding with terms from the query pattern
           - Runs the standard RAG+DB execute() pipeline from BaseDeptAgent
         """
-        from agents.registry import AgentRegistry
         from agents.base.base_dept_agent import BaseDeptAgent
 
         dept_tag = _slugify(request.get("suggested_dept") or

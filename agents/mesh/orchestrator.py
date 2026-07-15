@@ -24,16 +24,13 @@ main.py change:
     )
 """
 
-import asyncio
 import logging
-import uuid
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from models.nl_result import NLResult
 
 if TYPE_CHECKING:
     from agents.system.master_planner import MasterPlanner
-    from agents.system.fusion_agent import FusionAgent
     from agents.registry import AgentRegistry
     from agents.mesh.mesh_bus import MeshBus
     from agents.mesh.escalation_router import EscalationRouter

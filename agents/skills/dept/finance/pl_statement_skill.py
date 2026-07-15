@@ -17,8 +17,7 @@ from datetime import datetime
 from typing import Any
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from agents.skills.base_skill import BaseSkill, SkillOutput
 from infrastructure.project_context import ProjectContext

@@ -36,10 +36,8 @@ import aiohttp
 import config
 from infrastructure.llm_client import LLMClient, get_llm
 from infrastructure.llm_registry import (
-    PROVIDER_REGISTRY,
     APIStyle,
     get_provider,
-    get_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -341,7 +339,6 @@ async def get_llm_for_tenant(tenant_id: str = "default") -> "LLMClient | TenantL
         return get_llm()
 
     # Resolve fast/strong models
-    fm = provider.fast_model
     sm = provider.strong_model
     strong_model = cfg.get("strong_model") or (sm.model_id if sm else model_id)
     # Strip __custom__ sentinel

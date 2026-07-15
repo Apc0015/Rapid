@@ -15,9 +15,9 @@ Endpoints
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from routers.deps import get_current_user
@@ -237,7 +237,6 @@ async def customize_pack(
 
     # Load existing record, merge overrides
     from industry_packs.base_pack import get_tenant_pack, apply_pack_to_tenant
-    import json
     record = get_tenant_pack(tenant_id)
     existing_overrides: dict = {}
     existing_answers:   dict = {}
