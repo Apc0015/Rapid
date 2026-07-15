@@ -86,7 +86,14 @@ ROLE_DEFAULT_DEPTS: dict[str, list[str]] = {
     "sales_rep":       ["sales", "marketing", "hr", "it", "customer_success"],
     "finance_analyst": ["finance", "hr", "it", "procurement"],
     "legal_counsel":   ["legal", "hr", "it"],
-    "manager":         ALL_DEPTS,
+    # A manager is expected to have an explicit department on their user
+    # record (e.g. alice: manager/hr) — this is only the fallback for a
+    # manager with none assigned, so it fails closed to no access rather
+    # than granting every department. (dept_head/division_head/c_suite
+    # below are different: they have a real narrowing mechanism via
+    # set_dept_head/set_division_head, so ALL_DEPTS there is a genuine
+    # placeholder pending assignment, not a silent grant.)
+    "manager":         [],
     "dept_head":       ALL_DEPTS,   # scoped by assignment
     "division_head":   ALL_DEPTS,   # scoped by division assignment
     "c_suite":         ALL_DEPTS,   # scoped by division assignment

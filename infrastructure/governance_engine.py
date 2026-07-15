@@ -158,9 +158,25 @@ class GovernanceEngine:
                 verdicts.append(FieldVerdict(field_name, "ALLOW", "dept_allow"))
                 continue
 
-            # Default — allow if not in any block list
-            governed[field_name] = value
-            verdicts.append(FieldVerdict(field_name, "ALLOW", "default"))
+            # Default posture. If the dept declares an allow-list, anything not on
+            # it is denied. If no allow-list is configured for this dept, this
+            # engine has no opinion of its own — it defers to the same single
+            # source of truth as governance_filter/db_master (Article 0's
+            # default_action) instead of silently allowing everything, so all
+            # three governance paths agree on what an unlisted column does.
+            if allow_cols:
+                verdicts.append(FieldVerdict(field_name, "BLOCK", "default_deny"))
+            else:
+                from agents.system.governance_filter import get_governance
+                default_action = get_governance().default_action
+                if default_action == "ALLOW":
+                    governed[field_name] = value
+                    verdicts.append(FieldVerdict(field_name, "ALLOW", "default_ungoverned"))
+                elif default_action == "ANONYMIZE":
+                    governed[field_name] = "[ANONYMIZED]"
+                    verdicts.append(FieldVerdict(field_name, "ANONYMIZE", "default_ungoverned"))
+                else:
+                    verdicts.append(FieldVerdict(field_name, "BLOCK", "default_ungoverned"))
 
         return governed, verdicts
 

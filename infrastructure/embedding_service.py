@@ -38,8 +38,21 @@ _DIMS: dict[str, int] = {
 _DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
 _DEFAULT_DIM = 768
 
-# Semaphore for Ollama embedding calls (same constraint as LLM calls)
-_embed_semaphore = asyncio.Semaphore(2)  # embeddings are lighter, allow 2 concurrent
+# Semaphore for Ollama embedding calls (same constraint as LLM calls).
+# Created lazily per event loop: on Python 3.9 a module-level Semaphore binds
+# to the import-time loop, so any other loop (asyncio.run in a script, a
+# thread's loop) fails with "Future attached to a different loop" — this is
+# what silently broke every batch ingestion.
+_embed_semaphores: dict = {}
+
+
+def _embed_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _embed_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(2)  # embeddings are lighter, allow 2 concurrent
+        _embed_semaphores[loop] = sem
+    return sem
 
 
 class EmbeddingService:
@@ -103,7 +116,7 @@ class EmbeddingService:
         Call Ollama /api/embeddings (native endpoint, not OpenAI-compatible).
         More reliable than /v1/embeddings for embedding-only models.
         """
-        async with _embed_semaphore:
+        async with _embed_semaphore():
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self._ollama_raw}/api/embeddings",

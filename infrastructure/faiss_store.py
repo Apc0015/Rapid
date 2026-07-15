@@ -70,15 +70,18 @@ class DeptFaissIndex:
         async with self._lock:
             vec = _normalise(np.array(embedding, dtype=np.float32))
 
-            if self._index is None:
-                self._index = faiss.IndexFlatIP(self.dim)
-
             # Remove existing entry with same chunk_id
             existing_pos = next((i for i, m in enumerate(self._metadata) if m["chunk_id"] == chunk_id), None)
             if existing_pos is not None:
                 # FAISS flat index doesn't support deletion — rebuild
                 self._metadata.pop(existing_pos)
                 self._rebuild_index_from_meta()
+
+            # Create AFTER any rebuild — _rebuild_index_from_meta sets the
+            # index to None when metadata is empty, which would nuke a
+            # freshly created index and crash the .add below.
+            if self._index is None:
+                self._index = faiss.IndexFlatIP(self.dim)
 
             self._index.add(vec.reshape(1, -1))
             self._metadata.append({"chunk_id": chunk_id, "text": text, "source": source})
@@ -99,13 +102,19 @@ class DeptFaissIndex:
                 for _, _, _, emb in chunks
             ])
             dim = vecs.shape[1]
-            if self._index is None:
-                self._index = faiss.IndexFlatIP(dim)
 
             # Remove any existing entries with same chunk_ids
             new_ids = {c[0] for c in chunks}
+            before = len(self._metadata)
             self._metadata = [m for m in self._metadata if m["chunk_id"] not in new_ids]
-            self._rebuild_index_from_meta()
+            if len(self._metadata) != before:
+                self._rebuild_index_from_meta()
+
+            # Create AFTER the rebuild — _rebuild_index_from_meta sets the
+            # index to None when metadata is empty (the first-ever ingest
+            # path), which crashed every ingestion attempt before this.
+            if self._index is None:
+                self._index = faiss.IndexFlatIP(dim)
 
             self._index.add(vecs)
             for chunk_id, text, source, _ in chunks:

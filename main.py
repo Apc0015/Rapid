@@ -1,4 +1,3 @@
-from __future__ import annotations
 """
 RAPID — FastAPI application entry point.
 Production-hardened:
@@ -82,6 +81,11 @@ from routers.packs          import router as packs_router
 # Phase 9: Dynamic Agent Management
 from routers.custom_agents    import router as custom_agents_router
 from routers.nl_agent_creator import router as nl_agent_creator_router
+from routers.hr               import router as hr_router
+from routers.it               import router as it_router
+from routers.finance          import router as finance_router
+from routers.marketing        import router as marketing_router
+from orgos.api                import org_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -144,7 +148,7 @@ def _get_cors_origins() -> list[str]:
     ]
 
 
-def _get_cors_origin_regex() -> str | None:
+def _get_cors_origin_regex() -> Optional[str]:
     """Return origin regex only in development (never in production)."""
     if os.getenv("RAPID_ENV", "development") == "production":
         return None
@@ -327,6 +331,29 @@ app.include_router(packs_router)
 # Phase 9: Dynamic Agent Management
 app.include_router(custom_agents_router)
 app.include_router(nl_agent_creator_router)
+
+# Digital Organization — HR, IT, Finance, Marketing (built departments)
+app.include_router(hr_router)
+app.include_router(it_router)
+app.include_router(finance_router)
+app.include_router(marketing_router)
+app.include_router(org_router)
+
+# ── Frontend (served so the console is reachable at one URL) ───────────────────
+from pathlib import Path as _Path
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
+
+_frontend_dir = _Path(__file__).parent / "frontend"
+
+
+@app.get("/", include_in_schema=False)
+async def _root():
+    return RedirectResponse(url="/app/hr.html")
+
+
+if _frontend_dir.is_dir():
+    app.mount("/app", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -595,6 +622,95 @@ async def _run_query(
     if req.session_id:
         _save_to_history(req.session_id, req.query, response.answer, background_tasks)
     return response
+
+
+# ── Lean grounded Q&A (Ask RAPID) ─────────────────────────────────────────────
+# The full /query pipeline fans out to the whole multi-agent org — dozens of
+# LLM calls, built for cloud providers. /ask is the lean complement the console
+# uses: one query embedding, retrieval scores pick the department, then the
+# proven RAG pipeline produces ONE grounded, cited answer. Works well on a
+# local Ollama model.
+
+@app.post("/ask", response_model=QueryResponse)
+@limiter.limit("30/minute")
+async def ask(
+    request:      Request,
+    req:          QueryRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if len(req.query) > 2000:
+        raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
+
+    from infrastructure.embedding_service import get_embedder
+    from infrastructure.faiss_store import get_dept_index
+    from infrastructure.dept_config import get_dept_config
+    from pipelines.rag_pipeline import run_rag_pipeline
+    from infrastructure.llm_client import get_llm
+
+    query_id = str(uuid.uuid4())
+
+    # Departments this user may search: from the JWT depts claim; privileged
+    # roles (and users with no dept restriction) search everything indexed.
+    faiss_root = Path("data/faiss")
+    indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
+    role  = current_user.get("role", "employee")
+    depts = current_user.get("depts") or []
+    if role in ("admin", "ceo", "board_member") or not depts:
+        candidates = indexed
+    else:
+        candidates = [d for d in indexed if d in depts]
+    if not candidates:
+        return QueryResponse(
+            query_id=query_id, answer="No document knowledge base is available for your departments yet.",
+            confidence=0.1, action_taken="ask_no_index")
+
+    # Route by retrieval: embed once, take the department whose index scores
+    # highest for this query.
+    embedder = get_embedder()
+    cfg_all  = get_dept_config()
+    emb_cache: dict = {}
+    best_dept, best_score = None, 0.0
+    for d in candidates:
+        model = cfg_all.get_rag(d).get("embedding_model", "nomic-embed-text")
+        if model not in emb_cache:
+            emb_cache[model] = await embedder.embed(req.query, model=model)
+        idx = get_dept_index(d, dim=embedder.dim_for_model(model))
+        if idx.doc_count == 0:
+            continue
+        hits = await idx.vector_search(emb_cache[model], top_k=1)
+        if hits and hits[0][1] > best_score:
+            best_dept, best_score = d, hits[0][1]
+
+    if best_dept is None:
+        return QueryResponse(
+            query_id=query_id,
+            answer="Nothing in the indexed company documents matches this question.",
+            confidence=0.1, action_taken="ask_no_match")
+
+    logger.info(f"[{query_id[:8]}] /ask routed to dept={best_dept} (score {best_score:.3f})")
+    try:
+        result = await asyncio.wait_for(
+            run_rag_pipeline(req.query, best_dept, {}), timeout=180.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Answer timed out — try a simpler question")
+
+    get_audit().log_query({
+        "query_id": query_id, "user_id": current_user["sub"],
+        "raw_query": req.query, "timestamp": datetime.utcnow().isoformat(),
+        "intent_class": "ASK_RAG", "depts_activated": [best_dept],
+        "composite_confidence": result.confidence, "action_taken": "ask_rag",
+    })
+    return QueryResponse(
+        query_id=query_id,
+        answer=result.summary,
+        confidence=result.confidence,
+        warning=None if result.confidence >= 0.7 else
+            f"⚠️ Confidence moderate ({result.confidence:.0%}). Please verify this answer if it is critical to a decision.",
+        sources=list(result.citations or []),
+        dept_tags=[best_dept],
+        action_taken="ask_rag",
+        provider_used=getattr(get_llm(), "provider_id", "auto"),
+    )
 
 
 # ── History helper ────────────────────────────────────────────────────────────

@@ -85,7 +85,17 @@ async def _classify_doc_types_safe(query: str, dept_tag: str) -> list:
             llm.json_complete(query, system=system),
             timeout=8.0,
         )
-        return result if isinstance(result, list) else []
+        if not isinstance(result, list):
+            return []
+        # Local models sometimes wrap tags in objects ([{"tag": "policy"}])
+        # instead of plain strings — accept both, drop anything else.
+        tags: list = []
+        for item in result:
+            if isinstance(item, str):
+                tags.append(item)
+            elif isinstance(item, dict):
+                tags.extend(v for v in item.values() if isinstance(v, str))
+        return tags[:3]
     except Exception:
         return []
 

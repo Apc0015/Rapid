@@ -216,6 +216,20 @@ class TenantLLMAdapter:
         payload: dict = {"model": model, "messages": messages, "max_tokens": 2048}
 
         timeout = aiohttp.ClientTimeout(total=300 if self.provider_id == "ollama" else 90)
+
+        if self.provider_id == "ollama":
+            # Local Ollama handles one request at a time; unbounded concurrency
+            # (e.g. a multi-agent fan-out) makes every call queue past its
+            # timeout and 500. Serialise through the same per-loop semaphore
+            # LLMClient uses.
+            from infrastructure.llm_client import _ollama_semaphore
+            async with _ollama_semaphore():
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        return data["choices"][0]["message"]["content"].strip()
+
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
                 resp.raise_for_status()

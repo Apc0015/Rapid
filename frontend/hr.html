@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>RAPID — HR Department</title>
+<style>
+  :root{
+    --paper:#EEF0EA; --paper-raised:#FFFFFF; --paper-sunken:#E3E6DD;
+    --ink:#1B1F1D; --ink-soft:#5B665F; --ink-faint:#8A948D; --line:#D2D6C9;
+    --accent:#2F5E53; --accent-ink:#FFFFFF; --accent-soft:#DCE7E1;
+    --good:#5C7A2E; --good-soft:#E4EBD4;
+    --warn:#96691E; --warn-soft:#F1E4CC;
+    --critical:#A23A32; --critical-soft:#F4DEDA;
+    --queued:#6B6F66; --queued-soft:#E7E8E2;
+    --shadow: 0 1px 2px rgba(20,26,20,0.06), 0 10px 30px -14px rgba(20,26,20,0.22);
+    --sans:-apple-system,"Segoe UI",Inter,"Helvetica Neue",Arial,sans-serif;
+    --serif:Charter,"Iowan Old Style",Georgia,serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#12161A; --paper-raised:#191F24; --paper-sunken:#0D1114;
+      --ink:#E7EAE2; --ink-soft:#9AA69C; --ink-faint:#68716A; --line:#2A3128;
+      --accent:#6FBFAB; --accent-ink:#0B1512; --accent-soft:#1D2E29;
+      --good:#8FBF56; --good-soft:#212B18;
+      --warn:#D6A24A; --warn-soft:#2E2515;
+      --critical:#DB7A70; --critical-soft:#301917;
+      --queued:#8B9188; --queued-soft:#1D211D;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;}
+  button{font-family:inherit;cursor:pointer;}
+  .hidden{display:none !important;}
+
+  /* ---------- Login ---------- */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .login-card{background:var(--paper-raised);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:34px 32px;width:100%;max-width:380px;}
+  .brand{display:flex;align-items:center;gap:9px;margin-bottom:4px;}
+  .brand .mark{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--accent-ink);
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
+  .brand b{font-family:var(--serif);font-weight:600;font-size:19px;}
+  .login-card h1{font-family:var(--serif);font-weight:500;font-size:22px;margin:14px 0 3px;}
+  .login-card p.sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 22px;}
+  label{display:block;font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--ink-soft);
+    margin:0 0 5px;text-transform:uppercase;}
+  input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--paper);color:var(--ink);font-size:14px;font-family:inherit;}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent);}
+  .field{margin-bottom:15px;}
+  .btn{border:1px solid transparent;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);width:100%;}
+  .btn.primary:hover{filter:brightness(1.06);}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink-soft);}
+  .btn.ghost:hover{border-color:var(--ink-faint);color:var(--ink);}
+  .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:6px;}
+  .hint{font-size:12px;color:var(--ink-faint);margin-top:14px;text-align:center;}
+  .hint code{font-family:var(--mono);background:var(--paper-sunken);padding:1px 5px;border-radius:4px;}
+  .err{color:var(--critical);font-size:13px;margin-top:10px;min-height:18px;}
+
+  /* ---------- App shell ---------- */
+  #app{min-height:100vh;display:flex;flex-direction:column;}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:12px 22px;border-bottom:1px solid var(--line);background:var(--paper-raised);position:sticky;top:0;z-index:20;}
+  .top-left{display:flex;align-items:center;gap:18px;}
+  .dept-tabs{display:flex;align-items:center;gap:4px;}
+  .dept-tab{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;
+    background:transparent;color:var(--ink-faint);border:1px solid transparent;padding:5px 11px;
+    border-radius:20px;font-weight:700;cursor:pointer;}
+  .dept-tab:hover{color:var(--ink-soft);border-color:var(--line);}
+  .dept-tab.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-soft);}
+  .top-right{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink-soft);}
+  .whoami b{color:var(--ink);}
+  .layout{flex:1;display:grid;grid-template-columns:1fr 320px;gap:0;min-height:0;}
+  main.board-wrap{padding:20px 22px;overflow:auto;}
+  .board-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+  .board-head h2{font-family:var(--serif);font-weight:500;font-size:22px;margin:0;}
+  .board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
+  .exec-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+  .exec-card{background:var(--paper-raised);border:1px solid var(--line);border-radius:9px;
+    padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;}
+  .exec-card:hover{border-color:var(--accent);}
+  .exec-card .exec-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;}
+  .exec-card .exec-title{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.05em;}
+  .exec-card h4{font-family:var(--serif);font-weight:500;font-size:18px;margin:0 0 10px;}
+  .exec-card .exec-stats{display:flex;gap:18px;font-size:12.5px;color:var(--ink-soft);}
+  .exec-card .exec-stats b{color:var(--ink);font-family:var(--mono);}
+  .exec-card .exec-stats .warn-stat b{color:var(--critical);}
+  .dept-tag{font-family:var(--mono);font-size:9.5px;color:var(--accent);text-transform:uppercase;
+    font-weight:700;margin-right:6px;}
+  .col-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .col-head b{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);}
+  .count{font-family:var(--mono);font-size:11px;color:var(--ink-faint);background:var(--paper-sunken);
+    border-radius:10px;padding:1px 8px;}
+  .col{display:flex;flex-direction:column;gap:10px;min-height:60px;}
+  .col.dropzone{background:var(--paper-sunken);border-radius:10px;padding:8px;}
+
+  .card{background:var(--paper-raised);border:1px solid var(--line);border-radius:9px;padding:12px 12px 11px;
+    box-shadow:var(--shadow);cursor:pointer;transition:border-color .12s, transform .06s;}
+  .card:hover{border-color:var(--accent);}
+  .card:active{transform:scale(.995);}
+  .card .who{font-size:13.5px;font-weight:700;margin:0 0 2px;}
+  .card .what{font-size:12px;color:var(--ink-soft);margin:0 0 9px;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.03em;
+    text-transform:uppercase;padding:3px 7px;border-radius:4px;}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .chip.executing{background:var(--warn-soft);color:var(--warn);}
+  .chip.verifying{background:var(--accent-soft);color:var(--accent);}
+  .chip.done{background:var(--good-soft);color:var(--good);}
+  .chip.escalated{background:var(--critical-soft);color:var(--critical);}
+  .chip.failed{background:var(--critical-soft);color:var(--critical);}
+  .card .meta{display:flex;justify-content:space-between;align-items:center;margin-top:9px;
+    font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);}
+  .progress{height:4px;border-radius:2px;background:var(--paper-sunken);overflow:hidden;margin-top:8px;}
+  .progress i{display:block;height:100%;background:var(--accent);transition:width .3s;}
+  .empty{color:var(--ink-faint);font-size:12px;font-style:italic;padding:6px 2px;}
+
+  /* ---------- Right rail ---------- */
+  aside.rail{background:var(--paper-sunken);border-left:1px solid var(--line);padding:18px 16px;overflow:auto;}
+  .rail h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 10px;}
+  .rail .block{margin-bottom:22px;}
+  .esc{background:var(--critical-soft);border:1px solid var(--critical);border-radius:9px;padding:12px 13px;margin-bottom:10px;}
+  .esc .t{font-weight:700;font-size:13px;margin:0 0 4px;}
+  .esc .r{font-size:12px;color:var(--ink);margin:0 0 10px;}
+  .esc .tier{font-family:var(--mono);font-size:10px;color:var(--critical);text-transform:uppercase;letter-spacing:.05em;}
+  .esc-actions{display:flex;gap:7px;margin-top:9px;}
+  .btn.approve{background:var(--critical);color:#fff;}
+  .btn.reject{background:transparent;border-color:var(--ink-faint);color:var(--ink-soft);}
+  .digest-item{display:flex;gap:9px;font-size:12.5px;padding:9px 10px;background:var(--paper-raised);
+    border:1px solid var(--line);border-radius:7px;margin-bottom:7px;}
+  .digest-item .dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0;background:var(--good);}
+  .digest-item.escalated .dot{background:var(--critical);}
+  .digest-item.failed .dot{background:var(--critical);}
+
+  /* ---------- Modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(12,16,14,.5);display:flex;align-items:center;
+    justify-content:center;padding:24px;z-index:50;}
+  .modal{background:var(--paper-raised);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+    width:100%;max-width:520px;max-height:88vh;overflow:auto;padding:24px;}
+  .modal h3{font-family:var(--serif);font-weight:500;font-size:20px;margin:0 0 4px;}
+  .modal p.sub{color:var(--ink-soft);font-size:13px;margin:0 0 18px;}
+  .pb-desc{font-size:12.5px;color:var(--ink-soft);background:var(--paper-sunken);padding:9px 11px;
+    border-radius:7px;margin:2px 0 16px;border-left:3px solid var(--accent);}
+  .modal-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:20px;}
+
+  /* ---------- Drawer ---------- */
+  .drawer-overlay{position:fixed;inset:0;background:rgba(12,16,14,.4);z-index:40;}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--paper-raised);
+    border-left:1px solid var(--line);box-shadow:-16px 0 40px -20px rgba(0,0,0,.4);z-index:45;
+    overflow:auto;padding:22px 24px;}
+  .drawer-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;}
+  .drawer-head h3{font-family:var(--serif);font-weight:500;font-size:20px;margin:0;}
+  .drawer-sub{font-size:12.5px;color:var(--ink-soft);margin:2px 0 16px;}
+  .close-x{background:transparent;border:none;font-size:22px;color:var(--ink-faint);line-height:1;padding:2px 6px;}
+  .steps{display:flex;flex-direction:column;gap:2px;margin-top:6px;}
+  .step{display:grid;grid-template-columns:22px 1fr auto;gap:11px;align-items:start;padding:11px 0;
+    border-bottom:1px solid var(--paper-sunken);}
+  .step:last-child{border-bottom:none;}
+  .tick{width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:11px;flex-shrink:0;margin-top:1px;}
+  .tick.verified{background:var(--good-soft);color:var(--good);}
+  .tick.executed{background:var(--accent-soft);color:var(--accent);}
+  .tick.executing{background:var(--warn-soft);color:var(--warn);}
+  .tick.pending{background:var(--paper-sunken);color:var(--ink-faint);}
+  .tick.escalated{background:var(--critical-soft);color:var(--critical);}
+  .tick.failed{background:var(--critical-soft);color:var(--critical);}
+  .tick.skipped{background:var(--paper-sunken);color:var(--ink-faint);}
+  .step .s-title{font-weight:600;font-size:13.5px;}
+  .step.pending .s-title{color:var(--ink-faint);font-weight:400;}
+  .step .s-sum{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .step .s-verify{font-size:11.5px;margin-top:3px;color:var(--good);}
+  .step .s-verify.bad{color:var(--critical);}
+  .step .s-owner{font-family:var(--mono);font-size:10px;color:var(--ink-faint);text-align:right;white-space:nowrap;}
+  .aut-tag{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:6px;vertical-align:middle;}
+  .aut-A{background:var(--good-soft);color:var(--good);}
+  .aut-B{background:var(--warn-soft);color:var(--warn);}
+  .aut-C{background:var(--critical-soft);color:var(--critical);}
+  .drawer-section-t{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);
+    margin:22px 0 10px;border-top:1px solid var(--line);padding-top:16px;}
+  .audit-line{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:12px;padding:5px 0;color:var(--ink-soft);}
+  .audit-line .ev{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:nowrap;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
+    padding:10px 18px;border-radius:8px;font-size:13px;z-index:60;box-shadow:var(--shadow);opacity:0;
+    transition:opacity .2s, transform .2s;pointer-events:none;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  /* ---------- Ask RAPID ---------- */
+  .ask{max-width:760px;}
+  .ask-sub{font-size:13px;color:var(--ink-soft);margin:0 0 16px;}
+  .ask-bar{display:flex;gap:9px;margin-bottom:22px;}
+  .ask-bar input{flex:1;background:var(--paper-raised);border:1px solid var(--line);border-radius:9px;
+    padding:11px 14px;font-size:14px;color:var(--ink);}
+  .ask-bar input:focus{outline:none;border-color:var(--accent);}
+  .ask-bar .btn{width:auto;flex:0 0 auto;padding-left:22px;padding-right:22px;}
+  .ask-item{margin-bottom:18px;}
+  .ask-q{font-weight:700;font-size:13.5px;margin-bottom:7px;}
+  .ask-q::before{content:"Q";font-family:var(--mono);font-size:10px;color:var(--accent);
+    background:var(--accent-soft);border-radius:4px;padding:2px 6px;margin-right:8px;vertical-align:1px;}
+  .ask-a{background:var(--paper-raised);border:1px solid var(--line);border-radius:9px;
+    padding:14px 16px;box-shadow:var(--shadow);font-size:13.5px;line-height:1.55;}
+  .ask-a.pending{color:var(--ink-faint);font-style:italic;}
+  .ask-a.err{border-color:var(--critical);color:var(--critical);}
+  .ask-warn{margin-top:10px;font-size:12px;color:var(--warn);background:var(--warn-soft);
+    border-radius:6px;padding:7px 10px;}
+  .ask-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;
+    padding-top:10px;border-top:1px solid var(--paper-sunken);}
+  .ask-meta .conf{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);margin-right:6px;}
+  .src-chip{font-family:var(--mono);font-size:10px;color:var(--accent);background:var(--accent-soft);
+    border-radius:4px;padding:2px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr;}
+    aside.rail{border-left:none;border-top:1px solid var(--line);}
+    .board{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width:560px){ .board{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ LOGIN ═══════════ -->
+<div id="login">
+  <form class="login-card" onsubmit="doLogin(event)">
+    <div class="brand"><span class="mark">R</span><b>RAPID</b></div>
+    <h1>HR Department</h1>
+    <p class="sub">Your autonomous People Ops team. Sign in to the console.</p>
+    <div class="field">
+      <label for="uid">User ID</label>
+      <input id="uid" autocomplete="username" value="ayush" required/>
+    </div>
+    <div class="field">
+      <label for="pw">Password</label>
+      <input id="pw" type="password" autocomplete="current-password" required/>
+    </div>
+    <button class="btn primary" type="submit">Sign in</button>
+    <div class="err" id="loginErr"></div>
+    <p class="hint">Seed users: <code>ayush</code> (admin), <code>alice</code> (HR manager).</p>
+  </form>
+</div>
+
+<!-- ═══════════ APP ═══════════ -->
+<div id="app" class="hidden">
+  <header class="top">
+    <div class="top-left">
+      <div class="brand"><span class="mark">R</span><b>RAPID</b></div>
+      <nav class="dept-tabs" id="deptTabs"></nav>
+    </div>
+    <div class="top-right">
+      <button class="btn primary sm" id="newTaskBtn" onclick="openCreate()">+ New task</button>
+      <button class="btn ghost sm" onclick="loadBoard()">Refresh</button>
+      <span class="whoami">Signed in as <b id="whoami">—</b></span>
+      <button class="btn ghost sm" onclick="logout()">Log out</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main class="board-wrap">
+      <div class="board-head">
+        <h2 id="boardTitle">Work board</h2>
+      </div>
+      <div class="board" id="deptBoard">
+        <div><div class="col-head"><b>Executing</b><span class="count" id="c-executing">0</span></div>
+          <div class="col" id="col-executing"></div></div>
+        <div><div class="col-head"><b>Verifying</b><span class="count" id="c-verifying">0</span></div>
+          <div class="col" id="col-verifying"></div></div>
+        <div><div class="col-head"><b>Escalated</b><span class="count" id="c-escalated">0</span></div>
+          <div class="col" id="col-escalated"></div></div>
+        <div><div class="col-head"><b>Done</b><span class="count" id="c-done">0</span></div>
+          <div class="col" id="col-done"></div></div>
+      </div>
+      <div class="exec-grid hidden" id="execGrid"></div>
+      <div class="ask hidden" id="askPanel">
+        <p class="ask-sub">Ask a question about the company's documents and records.
+          Answers are grounded in indexed sources and cite where they came from.</p>
+        <form class="ask-bar" onsubmit="askQuestion(event)">
+          <input id="askInput" placeholder="e.g. How many days of annual leave do employees get?"
+                 maxlength="2000" autocomplete="off" required/>
+          <button class="btn primary" id="askBtn" type="submit">Ask</button>
+        </form>
+        <div id="askThread"></div>
+      </div>
+    </main>
+
+    <aside class="rail">
+      <div class="block">
+        <h3>Needs your decision</h3>
+        <div id="escList"><p class="empty">Nothing waiting on you.</p></div>
+      </div>
+      <div class="block">
+        <h3>Today's digest</h3>
+        <div id="digestList"><p class="empty">No completed work yet.</p></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="drawerRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "";                 // same origin
+let TOKEN = localStorage.getItem("rapid_token") || "";
+let PLAYBOOKS = [];
+const DEPARTMENTS = [
+  {key:"overview",  label:"Overview"},
+  {key:"hr",        label:"HR"},
+  {key:"it",        label:"IT"},
+  {key:"finance",   label:"Finance"},
+  {key:"marketing", label:"Marketing"},
+  {key:"ask",       label:"Ask RAPID"},
+];
+const EXEC_TITLES = {hr:"CHRO", finance:"CFO", it:"COO", marketing:"CMO"};
+let CURRENT_DEPT = localStorage.getItem("rapid_dept") || "overview";
+
+function renderDeptTabs(){
+  const el = document.getElementById("deptTabs");
+  el.innerHTML = DEPARTMENTS.map(d =>
+    `<button class="dept-tab ${d.key===CURRENT_DEPT?'active':''}" onclick="switchDept('${d.key}')">${esc(d.label)}</button>`
+  ).join("");
+}
+async function switchDept(key){
+  if(key===CURRENT_DEPT) return;
+  CURRENT_DEPT = key; localStorage.setItem("rapid_dept", key);
+  renderDeptTabs();
+  await refreshCurrentView();
+}
+async function refreshCurrentView(){
+  const isOverview = CURRENT_DEPT === "overview";
+  const isAsk = CURRENT_DEPT === "ask";
+  document.getElementById("newTaskBtn").classList.toggle("hidden", isOverview || isAsk);
+  document.getElementById("askPanel").classList.toggle("hidden", !isAsk);
+  if(isAsk){
+    document.getElementById("boardTitle").textContent = "Ask RAPID";
+    document.getElementById("deptBoard").classList.add("hidden");
+    document.getElementById("execGrid").classList.add("hidden");
+    document.getElementById("askInput").focus();
+  } else if(isOverview){
+    document.getElementById("boardTitle").textContent = "Organization overview";
+    await loadOverview();
+  } else {
+    document.getElementById("boardTitle").textContent = DEPARTMENTS.find(d=>d.key===CURRENT_DEPT).label + " work board";
+    await loadPlaybooks();
+    await loadBoard();
+  }
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+async function api(path, opts={}){
+  const headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
+  if(TOKEN) headers["Authorization"] = "Bearer "+TOKEN;
+  const res = await fetch(API+path, Object.assign({}, opts, {headers}));
+  if(res.status===401){ logout(); throw new Error("Session expired — please log in again."); }
+  const text = await res.text();
+  let data; try{ data = text ? JSON.parse(text) : {}; }catch{ data = {raw:text}; }
+  if(!res.ok) throw new Error(data.detail || ("Request failed ("+res.status+")"));
+  return data;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+function autTag(a){ const m={A_auto:["A","aut-A"],B_approve:["B","aut-B"],C_human:["C","aut-C"]}[a]||["?","aut-A"];
+  return `<span class="aut-tag ${m[1]}" title="${a}">${m[0]}</span>`; }
+
+// ── auth ────────────────────────────────────────────────────────────────────
+async function doLogin(e){
+  e.preventDefault();
+  const errEl=document.getElementById("loginErr"); errEl.textContent="";
+  try{
+    const data = await api("/auth/login",{method:"POST",body:JSON.stringify({
+      user_id:document.getElementById("uid").value.trim(),
+      password:document.getElementById("pw").value })});
+    TOKEN = data.access_token; localStorage.setItem("rapid_token",TOKEN);
+    localStorage.setItem("rapid_name", data.name || data.user_id);
+    enterApp(data.name || data.user_id);
+  }catch(err){ errEl.textContent = err.message; }
+}
+function logout(){
+  TOKEN=""; localStorage.removeItem("rapid_token");
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("login").classList.remove("hidden");
+}
+async function enterApp(name){
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("whoami").textContent = name || "—";
+  renderDeptTabs();
+  await refreshCurrentView();
+}
+
+// ── Ask RAPID (grounded Q&A over documents + records) ──────────────────────
+async function askQuestion(e){
+  e.preventDefault();
+  const input = document.getElementById("askInput");
+  const q = input.value.trim();
+  if(!q) return;
+  const btn = document.getElementById("askBtn");
+  const thread = document.getElementById("askThread");
+  const id = "ask-" + Date.now();
+  thread.insertAdjacentHTML("afterbegin",
+    `<div class="ask-item"><div class="ask-q">${esc(q)}</div>
+      <div class="ask-a pending" id="${id}">Searching documents and records — local model, may take up to a minute…</div></div>`);
+  btn.disabled = true; input.value = "";
+  try{
+    const r = await api("/ask",{method:"POST",body:JSON.stringify({query:q})});
+    const el = document.getElementById(id);
+    el.classList.remove("pending");
+    const srcs = (r.sources||[]).map(s=>`<span class="src-chip" title="${esc(s)}">${esc(s)}</span>`).join("");
+    const conf = (r.confidence!=null)
+      ? `<span class="conf">confidence ${(r.confidence*100).toFixed(0)}%</span>` : "";
+    const warn = r.warning ? `<div class="ask-warn">${esc(r.warning)}</div>` : "";
+    el.innerHTML =
+      `<div class="ask-text">${esc(r.answer).replace(/\n/g,"<br>")}</div>${warn}
+       <div class="ask-meta">${conf}${srcs || '<span class="conf">no sources cited</span>'}</div>`;
+  }catch(err){
+    const el = document.getElementById(id);
+    el.classList.remove("pending"); el.classList.add("err");
+    el.textContent = err.message;
+  }finally{
+    btn.disabled = false; input.focus();
+  }
+}
+
+// ── board ───────────────────────────────────────────────────────────────────
+async function loadBoard(){
+  document.getElementById("execGrid").classList.add("hidden");
+  document.getElementById("deptBoard").classList.remove("hidden");
+  let b; try{ b = await api(`/${CURRENT_DEPT}/board`); }catch(err){ toast(err.message); return; }
+  const map = {executing:"col-executing",verifying:"col-verifying",
+               escalated:"col-escalated",done:"col-done"};
+  // failed runs fold into Done column, styled as failed
+  const cols = {executing:[...b.columns.executing], verifying:[...b.columns.verifying],
+                escalated:[...b.columns.escalated], done:[...b.columns.done, ...b.columns.failed]};
+  for(const key in map){
+    const el=document.getElementById(map[key]); el.innerHTML="";
+    const runs = cols[key];
+    document.getElementById("c-"+key).textContent = runs.length;
+    if(!runs.length){ el.innerHTML=`<p class="empty">—</p>`; continue; }
+    runs.forEach(r=> el.appendChild(runCard(r)));
+  }
+  renderEscalations(b.escalations);
+  renderDigest(b.digest);
+}
+function runCard(r){
+  const d=document.createElement("div"); d.className="card"; d.onclick=()=>openRun(r.run_id);
+  const st = r.status==="failed" ? "failed"
+           : ["triggered","planned","executing"].includes(r.status) ? "executing"
+           : r.status;
+  const pct = r.progress.total ? Math.round(100*r.progress.done/r.progress.total) : 0;
+  const showBar = !["done","failed"].includes(r.status);
+  d.innerHTML = `
+    <p class="who">${esc(r.subject)} — ${esc(pbTitle(r.playbook))}</p>
+    <p class="what">${esc(r.digest_line || descFor(r.playbook))}</p>
+    <span class="chip ${st}">${esc(r.status)}</span>
+    ${showBar?`<div class="progress"><i style="width:${pct}%"></i></div>`:""}
+    <div class="meta"><span>${esc(r.run_id.slice(0,10))}</span><span>${r.progress.done}/${r.progress.total} steps</span></div>`;
+  return d;
+}
+function pbTitle(k){ const p=PLAYBOOKS.find(p=>p.key===k); return p?p.title:k; }
+function descFor(k){ const p=PLAYBOOKS.find(p=>p.key===k); return p?p.description:""; }
+
+// ── escalations ─────────────────────────────────────────────────────────────
+function renderEscalations(list){
+  const el=document.getElementById("escList");
+  if(!list||!list.length){ el.innerHTML=`<p class="empty">Nothing waiting on you.</p>`; return; }
+  el.innerHTML="";
+  list.forEach(e=>{
+    const tier = {A_auto:"auto",B_approve:"approval needed",C_human:"your decision"}[e.autonomy]||e.autonomy;
+    const dept = e.department || CURRENT_DEPT;
+    const tag = e.department && CURRENT_DEPT==="overview" ? `<span class="dept-tag">${esc(dept)}</span>` : "";
+    const c=document.createElement("div"); c.className="esc";
+    c.innerHTML=`
+      <p class="tier">${tag}${esc(tier)}</p>
+      <p class="t">${esc(e.title)}</p>
+      <p class="r">${esc(e.reason)}</p>
+      <div class="esc-actions">
+        <button class="btn approve sm" onclick="decide('${e.escalation_id}',true,'${dept}')">Approve</button>
+        <button class="btn reject sm" onclick="decide('${e.escalation_id}',false,'${dept}')">Decline</button>
+        <button class="btn ghost sm" onclick="openRun('${e.run_id}','${dept}')">View run</button>
+      </div>`;
+    el.appendChild(c);
+  });
+}
+async function decide(id, approved, department){
+  const dept = department || CURRENT_DEPT;
+  const note = approved ? "" : (prompt("Optional note on why you're declining:")||"");
+  try{
+    await api(`/${dept}/escalations/${id}/decide`,{method:"POST",body:JSON.stringify({approved,note})});
+    toast(approved?"Approved — run resumed.":"Declined — run stopped safely.");
+    await refreshCurrentView();
+  }catch(err){ toast(err.message); }
+}
+
+// ── digest ──────────────────────────────────────────────────────────────────
+function renderDigest(list){
+  const el=document.getElementById("digestList");
+  if(!list||!list.length){ el.innerHTML=`<p class="empty">No completed work yet.</p>`; return; }
+  el.innerHTML="";
+  list.forEach(d=>{
+    const dept = d.department || CURRENT_DEPT;
+    const tag = d.department && CURRENT_DEPT==="overview" ? `<span class="dept-tag">${esc(dept)}</span>` : "";
+    const c=document.createElement("div"); c.className="digest-item "+d.status;
+    c.onclick=()=>openRun(d.run_id, dept); c.style.cursor="pointer";
+    c.innerHTML=`<span class="dot"></span><span>${tag}${esc(d.line)}</span>`;
+    el.appendChild(c);
+  });
+}
+
+// ── overview (C-suite view) ──────────────────────────────────────────────────
+async function loadOverview(){
+  document.getElementById("deptBoard").classList.add("hidden");
+  document.getElementById("execGrid").classList.remove("hidden");
+  let o; try{ o = await api("/org/overview"); }catch(err){ toast(err.message); return; }
+  const el = document.getElementById("execGrid");
+  el.innerHTML = "";
+  for(const [dept, stats] of Object.entries(o.departments)){
+    const label = DEPARTMENTS.find(d=>d.key===dept)?.label || dept;
+    const card = document.createElement("div");
+    card.className = "exec-card";
+    card.onclick = () => switchDept(dept);
+    card.innerHTML = `
+      <div class="exec-head"><span class="exec-title">${esc(EXEC_TITLES[dept]||"")}</span></div>
+      <h4>${esc(label)}</h4>
+      <div class="exec-stats">
+        <span>Total runs <b>${stats.total}</b></span>
+        <span class="${stats.escalated?'warn-stat':''}">Needs decision <b>${stats.escalated}</b></span>
+      </div>`;
+    el.appendChild(card);
+  }
+  renderEscalations(o.escalations);
+  renderDigest(o.digest);
+}
+
+// ── create task ─────────────────────────────────────────────────────────────
+async function loadPlaybooks(){
+  try{ const r=await api(`/${CURRENT_DEPT}/playbooks`); PLAYBOOKS=r.playbooks; }catch(err){ toast(err.message); }
+}
+function openCreate(){
+  const root=document.getElementById("modalRoot");
+  root.innerHTML=`
+    <div class="overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>New ${esc(DEPARTMENTS.find(d=>d.key===CURRENT_DEPT).label)} task</h3>
+        <p class="sub">Pick what happened. It's routed to the right specialist automatically — you only step in if the task's consequence needs it.</p>
+        <div class="field">
+          <label for="pbSel">Task type</label>
+          <select id="pbSel" onchange="renderPbForm()"></select>
+        </div>
+        <div id="pbDesc" class="pb-desc"></div>
+        <div class="field">
+          <label for="subj">Who / what is this about?</label>
+          <input id="subj" placeholder="e.g. Priya Sharma"/>
+        </div>
+        <div id="pbFields"></div>
+        <div class="modal-actions">
+          <button class="btn ghost" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" onclick="submitRun()">Create &amp; run</button>
+        </div>
+      </div>
+    </div>`;
+  const sel=document.getElementById("pbSel");
+  sel.innerHTML=PLAYBOOKS.map(p=>`<option value="${p.key}">${esc(p.title)}</option>`).join("");
+  renderPbForm();
+}
+function renderPbForm(){
+  const key=document.getElementById("pbSel").value;
+  const pb=PLAYBOOKS.find(p=>p.key===key);
+  document.getElementById("pbDesc").textContent=pb.description;
+  const wrap=document.getElementById("pbFields");
+  wrap.innerHTML=(pb.required_inputs||[]).map(f=>{
+    const req=f.required?" *":"";
+    if(f.type==="select"){
+      const opts=(f.options||[]).map(o=>`<option value="${o}">${esc(o.replace(/_/g,' '))}</option>`).join("");
+      return `<div class="field"><label>${esc(f.label)}${req}</label><select data-k="${f.name}">${opts}</select></div>`;
+    }
+    const t = f.type==="number"?"number":(f.type==="date"?"date":"text");
+    return `<div class="field"><label>${esc(f.label)}${req}</label><input type="${t}" data-k="${f.name}"/></div>`;
+  }).join("");
+}
+async function submitRun(){
+  const key=document.getElementById("pbSel").value;
+  const subject=document.getElementById("subj").value.trim();
+  if(!subject){ toast("Add who/what this is about."); return; }
+  const inputs={};
+  document.querySelectorAll("#pbFields [data-k]").forEach(el=>{ if(el.value) inputs[el.dataset.k]=el.value; });
+  try{
+    const run=await api(`/${CURRENT_DEPT}/runs`,{method:"POST",body:JSON.stringify({playbook:key,subject,inputs})});
+    closeModal(); await loadBoard();
+    toast(run.status==="escalated" ? "Created — paused for your decision." : "Created — HR is running it.");
+    openRun(run.run_id);
+  }catch(err){ toast(err.message); }
+}
+function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
+
+// ── run drawer ──────────────────────────────────────────────────────────────
+async function openRun(runId, department){
+  const dept = department || (CURRENT_DEPT!=="overview" ? CURRENT_DEPT : null);
+  if(!dept){ toast("Pick a department tab to view this run."); return; }
+  let run, audit;
+  try{
+    run=await api(`/${dept}/runs/${runId}`);
+    audit=await api(`/${dept}/audit/${runId}`);
+  }catch(err){ toast(err.message); return; }
+  const stepsHtml = run.steps.map(s=>{
+    const icon={verified:"✓",executed:"•",executing:"…",pending:s.seq+1,escalated:"!",
+                failed:"✕",skipped:"–"}[s.status]||"•";
+    const vr = s.verify_result && Object.keys(s.verify_result).length
+      ? `<div class="s-verify ${s.verify_result.ok?"":"bad"}">${s.verify_result.ok?"✓ Verified independently":"✕ "+esc(s.verify_result.detail)} ${s.verified_by?"· "+esc(s.verified_by):""}</div>` : "";
+    const sum = s.result_summary?`<div class="s-sum">${esc(s.result_summary)}</div>`:
+                (s.status==="pending"?`<div class="s-sum">${esc(s.description||"")}</div>`:"");
+    return `<div class="step ${s.status}">
+      <span class="tick ${s.status}">${icon}</span>
+      <div><div class="s-title">${esc(s.title)}${autTag(s.autonomy)}</div>${sum}${vr}</div>
+      <span class="s-owner">${esc(s.owner)}<br/>${esc(s.status)}</span>
+    </div>`;
+  }).join("");
+  const auditHtml=(audit.entries||[]).map(a=>
+    `<div class="audit-line"><span class="ev">${esc(a.event)}</span><span>${esc(a.detail)} <span style="color:var(--ink-faint)">— ${esc(a.actor)}</span></span></div>`
+  ).join("");
+  const canAdvance = ["triggered","planned","executing","verifying"].includes(run.status);
+  document.getElementById("drawerRoot").innerHTML=`
+    <div class="drawer-overlay" onclick="closeDrawer()"></div>
+    <div class="drawer">
+      <div class="drawer-head">
+        <div><h3>${esc(run.subject)} — ${esc(pbTitle(run.playbook))}</h3></div>
+        <button class="close-x" onclick="closeDrawer()">×</button>
+      </div>
+      <div class="drawer-sub">
+        <span class="chip ${run.status==='failed'?'failed':(['triggered','planned','executing'].includes(run.status)?'executing':run.status)}">${esc(run.status)}</span>
+        &nbsp; ${run.progress.done}/${run.progress.total} steps verified &nbsp;·&nbsp; ${esc(run.run_id)}
+        &nbsp;·&nbsp; triggered via ${esc(run.trigger_type)} by ${esc(run.created_by)}
+      </div>
+      ${run.digest_line?`<div class="pb-desc">${esc(run.digest_line)}</div>`:""}
+      ${canAdvance?`<button class="btn ghost sm" onclick="advance('${run.run_id}','${dept}')">▶ Advance one step</button>`:""}
+      <div class="steps">${stepsHtml}</div>
+      <div class="drawer-section-t">Immutable audit ledger</div>
+      ${auditHtml||'<p class="empty">No entries.</p>'}
+    </div>`;
+}
+async function advance(runId, department){
+  const dept = department || CURRENT_DEPT;
+  try{ await api(`/${dept}/runs/${runId}/advance`,{method:"POST",body:JSON.stringify({single_step:true})});
+    await openRun(runId, dept); await refreshCurrentView();
+  }catch(err){ toast(err.message); }
+}
+function closeDrawer(){ document.getElementById("drawerRoot").innerHTML=""; }
+
+// ── boot ────────────────────────────────────────────────────────────────────
+if(TOKEN){ enterApp(localStorage.getItem("rapid_name")||"").catch(()=>logout()); }
+</script>
+</body>
+</html>

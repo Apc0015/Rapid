@@ -138,11 +138,15 @@ class TestApplyRules:
         governed, log = gov.apply_rules(result, rs)
         assert governed.get("bonus") == 7000
 
-    def test_unknown_column_defaults_to_allow(self, gov):
+    def test_unknown_column_denied_by_default(self, gov):
+        # Deny-by-default: a column with no explicit rule is BLOCKed, not exposed.
         rs = gov.load_rules("jake", "finance", user_role="employee")
         result = {"mystery_column": "some_value"}
         governed, log = gov.apply_rules(result, rs)
-        assert governed.get("mystery_column") == "some_value"
+        assert "mystery_column" not in governed
+        actions = {e["field"]: e["action"] for e in log}
+        assert actions["mystery_column"] == "BLOCK"
+        assert log[0]["via"] == "default"
 
     def test_audit_log_entries_created(self, gov):
         rs = gov.load_rules("kate", "finance", user_role="employee")
@@ -157,6 +161,48 @@ class TestApplyRules:
         governed, log = gov.apply_rules({}, rs)
         assert governed == {}
         assert log == []
+
+
+# ── Default posture (Article 0) ───────────────────────────────────────────────
+
+class TestDefaultAction:
+
+    def test_default_is_block_when_unset(self, gov):
+        # Test constitution has no governance.default_action → deny-by-default.
+        assert gov.default_action == "BLOCK"
+
+    def test_default_allow_override_exposes_unlisted(self, tmp_path):
+        from agents.system.governance_filter import GovernanceFilter
+        p = tmp_path / "c.yaml"
+        p.write_text(textwrap.dedent("""
+            governance:
+              default_action: ALLOW
+            column_permissions:
+              finance:
+                salaries:
+                  salary: BLOCK
+        """))
+        g = GovernanceFilter(constitution_path=str(p))
+        assert g.default_action == "ALLOW"
+        rs = g.load_rules("u", "finance", user_role="employee")
+        governed, _ = g.apply_rules({"mystery": "v"}, rs)
+        assert governed.get("mystery") == "v"   # opt-in fail-open works
+
+    def test_invalid_default_fails_closed_to_block(self, tmp_path):
+        from agents.system.governance_filter import GovernanceFilter
+        p = tmp_path / "c.yaml"
+        p.write_text("governance:\n  default_action: bogus\ncolumn_permissions: {}\n")
+        g = GovernanceFilter(constitution_path=str(p))
+        assert g.default_action == "BLOCK"
+
+    def test_no_constitution_allows_dev_mode(self, tmp_path):
+        # No constitution file → governance disabled (dev) → allow, not block.
+        from agents.system.governance_filter import GovernanceFilter
+        g = GovernanceFilter(constitution_path=str(tmp_path / "nope.yaml"))
+        assert g.default_action == "ALLOW"
+        rs = g.load_rules("u", "finance", user_role="employee")
+        governed, _ = g.apply_rules({"anything": "v"}, rs)
+        assert governed.get("anything") == "v"
 
 
 # ── Department boundaries ─────────────────────────────────────────────────────
@@ -331,3 +377,98 @@ class TestAnonymizationMethods:
         assert _mask_email("noemail") == "[ANONYMIZED]"
         assert _mask_email("") == "[ANONYMIZED]"
         assert _mask_email("@domain.com") == "***@domain.com"
+
+
+# ── Manager department scope (regression test for the privilege bug) ──────────
+
+class TestManagerDepartmentScope:
+    """
+    A department manager must only see their own department(s) — NOT every
+    department in the company. This was actually TWO bugs stacked: (1)
+    "manager" was included in governance_filter's executive_all alongside
+    ceo/board_member/admin, and (2) user_registry.ROLE_DEFAULT_DEPTS['manager']
+    was ALL_DEPTS with no assignment mechanism to narrow it (unlike dept_head/
+    division_head, which have a real set_dept_head/set_division_head system).
+    Both silently granted every manager company-wide visibility by default.
+    """
+
+    def test_manager_is_not_granted_all_departments(self, gov):
+        perms = gov.get_user_permissions("alice", "manager", permitted_depts=["hr"])
+        assert perms["permitted_departments"] == ["hr"]
+
+    def test_manager_without_explicit_depts_gets_role_default_not_all(self, gov):
+        perms = gov.get_user_permissions("bob", "manager", permitted_depts=None)
+        from infrastructure.user_registry import ALL_DEPTS
+        assert perms["permitted_departments"] != ALL_DEPTS
+        assert perms["permitted_departments"] == [], (
+            "a manager with no department assigned on their user record should "
+            "fail closed to no access, not fall back to every department"
+        )
+
+    def test_ceo_still_gets_all_departments(self, gov):
+        from infrastructure.user_registry import ALL_DEPTS
+        perms = gov.get_user_permissions("carol", "ceo", permitted_depts=["hr"])
+        assert perms["permitted_departments"] == ALL_DEPTS
+
+    def test_admin_still_gets_all_departments(self, gov):
+        from infrastructure.user_registry import ALL_DEPTS
+        perms = gov.get_user_permissions("dave", "admin", permitted_depts=["hr"])
+        assert perms["permitted_departments"] == ALL_DEPTS
+
+    def test_board_member_still_gets_all_departments(self, gov):
+        from infrastructure.user_registry import ALL_DEPTS
+        perms = gov.get_user_permissions("erin", "board_member", permitted_depts=["hr"])
+        assert perms["permitted_departments"] == ALL_DEPTS
+
+
+# ── db_master schema-exposure path (regression test for the fail-open bug) ────
+
+class TestSchemaExposureDenyByDefault:
+    """
+    infrastructure.db_master._apply_permission_to_schema had its own hardcoded
+    'ALLOW' default for unlisted columns, disagreeing with governance_filter's
+    deny-by-default posture. This confirms the two now agree.
+    """
+
+    @pytest.fixture
+    def patched_singleton(self, gov, monkeypatch):
+        """
+        _apply_permission_to_schema reads the module-level get_governance()
+        singleton (same pattern apply_governance already used), not a governance
+        object passed as a parameter. Point that singleton at this test's
+        isolated tmp constitution so the test is deterministic regardless of
+        what else has run in this process.
+        """
+        import agents.system.governance_filter as gf
+        monkeypatch.setattr(gf, "_governance", gov)
+        return gov
+
+    def test_unlisted_column_blocked_in_rich_schema(self, patched_singleton):
+        from infrastructure.db_master import DBMaster
+        dbm = DBMaster.__new__(DBMaster)  # bypass __init__ — no DB needed for this method
+        schema = {"employees": {"columns": {
+            "name": {"type": "text", "sensitivity": "allow"},
+            "mystery_field": {"type": "text"},  # no sensitivity, no constitution rule
+        }, "row_limit": 500}}
+        # "name" explicitly allowed via constitution column_rules; "mystery_field"
+        # has NO entry anywhere — that's the unlisted column under test.
+        user_permissions = {"dept_tag": "hr", "role": "employee",
+                            "column_rules": {"name": "ALLOW"}}
+        filtered = dbm._apply_permission_to_schema(schema, user_permissions)
+        cols = filtered.get("employees", {}).get("columns", {})
+        assert "name" in cols
+        assert "mystery_field" not in cols, "unlisted column should be BLOCKed by default, not ALLOWed"
+
+    def test_manager_no_longer_bypasses_anonymization_blanket(self, patched_singleton):
+        from infrastructure.db_master import DBMaster
+        dbm = DBMaster.__new__(DBMaster)
+        schema = {"employees": {"columns": {
+            "salary": {"type": "number", "sensitivity": "anonymize"},
+        }, "row_limit": 500}}
+        user_permissions = {"dept_tag": "hr", "role": "manager",
+                            "column_rules": {"salary": "ANONYMIZE"}}
+        filtered = dbm._apply_permission_to_schema(schema, user_permissions)
+        assert filtered["employees"]["columns"]["salary"]["anonymize"] is True, (
+            "a manager should not get a blanket anonymization bypass; "
+            "only an explicit ALLOW_MANAGER column rule should unmask a field"
+        )

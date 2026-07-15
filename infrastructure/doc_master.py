@@ -95,7 +95,11 @@ class DocMaster:
         # Augment BM25 query with R1 doc-type keywords so matching-type chunks score higher
         bm25_query = query_text
         if doc_type_filter:
-            bm25_query = f"{query_text} {' '.join(doc_type_filter)}"
+            # Defensive: only join string tags — the R1 classifier is an LLM
+            # and may hand back malformed entries.
+            str_tags = [t for t in doc_type_filter if isinstance(t, str)]
+            if str_tags:
+                bm25_query = f"{query_text} {' '.join(str_tags)}"
 
         vector_results = await index.vector_search(query_embedding, top_k=k * 2)
         bm25_results   = await index.bm25_search(bm25_query, top_k=k * 2)

@@ -8,6 +8,7 @@ Run:
     cd rapid
     python -m pytest tests/test_intent_classifier.py -v
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -15,31 +16,37 @@ import types
 import pytest
 
 # ── Stub heavy dependencies so spokesman can be imported without LLM / FAISS ──
+# Only stub a module when the real one cannot be imported. NEVER mutate an
+# already-imported real module — assigning attrs on it (e.g. wiping
+# user_registry.ROLE_DEFAULT_DEPTS) leaks into every test that runs after
+# this file in the same session.
 
-def _make_stub(name):
-    m = types.ModuleType(name)
-    sys.modules.setdefault(name, m)
-    return m
+_STUB_ATTRS = {
+    "infrastructure.llm_client": {"get_llm": lambda: None},
+    "infrastructure.embedding_service": {"get_embedder": lambda: None},
+    "infrastructure.faiss_store": {"get_dept_index": lambda *a, **kw: None},
+    "infrastructure.user_registry": {
+        "ROLE_DEFAULT_DEPTS": {},
+        "ALL_DEPTS": [
+            "finance", "hr", "legal", "sales", "marketing",
+            "ops", "it", "procurement", "rd", "customer_success",
+        ],
+        "AGGREGATE_ONLY_ROLES": set(),
+        "verify_password": lambda *a, **kw: False,
+        "hash_password": lambda p: p,
+        "load_users": lambda: {},
+    },
+    "infrastructure.doc_master": {"get_doc_master": lambda: None},
+}
 
-for mod in [
-    "infrastructure.llm_client",
-    "infrastructure.embedding_service",
-    "infrastructure.faiss_store",
-    "infrastructure.user_registry",
-    "infrastructure.doc_master",
-]:
-    _make_stub(mod)
-
-# Provide minimal stubs needed for module-level code
-sys.modules["infrastructure.llm_client"].get_llm = lambda: None
-sys.modules["infrastructure.embedding_service"].get_embedder = lambda: None
-sys.modules["infrastructure.faiss_store"].get_dept_index = lambda *a, **kw: None
-sys.modules["infrastructure.user_registry"].ROLE_DEFAULT_DEPTS = {}
-sys.modules["infrastructure.user_registry"].ALL_DEPTS = [
-    "finance", "hr", "legal", "sales", "marketing",
-    "ops", "it", "procurement", "rd", "customer_success",
-]
-sys.modules["infrastructure.user_registry"].AGGREGATE_ONLY_ROLES = set()
+for _mod, _attrs in _STUB_ATTRS.items():
+    try:
+        __import__(_mod)          # real module importable — leave it alone
+    except Exception:
+        _m = types.ModuleType(_mod)
+        for _k, _v in _attrs.items():
+            setattr(_m, _k, _v)
+        sys.modules[_mod] = _m
 
 from agents.system.spokesperson import _keyword_classify, INTENT_TRIVIAL, INTENT_GENERAL
 

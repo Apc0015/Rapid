@@ -78,7 +78,19 @@ def get_preferred_provider() -> str:
 # ── Ollama concurrency limiter ────────────────────────────────────────────────
 # Local Ollama can only handle one request at a time efficiently.
 # This semaphore serialises concurrent calls so they queue rather than pile up.
-_ollama_semaphore = asyncio.Semaphore(1)
+# Created lazily per event loop: on Python 3.9 a module-level Semaphore binds
+# to the import-time loop and fails under any other loop with
+# "Future attached to a different loop".
+_ollama_semaphores: dict = {}
+
+
+def _ollama_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _ollama_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(1)
+        _ollama_semaphores[loop] = sem
+    return sem
 
 # ── Prompt logger (firewall validation) ──────────────────────────────────────
 _prompt_log: list[str] = []
@@ -293,7 +305,7 @@ class LLMClient:
         model = self.ollama_model
         payload = {"model": model, "messages": messages, "stream": False}
 
-        async with _ollama_semaphore:
+        async with _ollama_semaphore():
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{base}/chat/completions",

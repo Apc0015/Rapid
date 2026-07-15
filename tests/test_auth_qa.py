@@ -14,6 +14,7 @@ Run:
 Requirements:
     pip install pytest fastapi httpx pyjwt bcrypt pyyaml slowapi
 """
+from __future__ import annotations
 
 import os
 import json

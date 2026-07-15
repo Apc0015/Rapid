@@ -265,10 +265,16 @@ class DBMaster:
         col_rules = self._get_column_rules(dept_tag, user_permissions)
         governed, governance_log = [], []
 
+        # Deny-by-default: columns with no explicit rule follow the constitution's
+        # Article 0 default_action (BLOCK unless overridden). Single source of truth
+        # is the GovernanceFilter so the DB path and the agent-output path agree.
+        from agents.system.governance_filter import get_governance
+        default_action = get_governance().default_action
+
         for row in raw_results:
             new_row = {}
             for col, val in row.items():
-                rule = col_rules.get(col, "ALLOW")
+                rule = col_rules.get(col, default_action)
                 if rule == "ALLOW":
                     new_row[col] = val
                     governance_log.append({"col": col, "action": "ALLOW"})
@@ -450,8 +456,13 @@ class DBMaster:
         """
         dept_tag  = user_permissions.get("dept_tag", "")
         col_rules = self._get_column_rules(dept_tag, user_permissions)
-        role      = user_permissions.get("role", "employee")
         filtered  = {}
+
+        # Deny-by-default: same single source of truth as apply_governance(),
+        # so the schema-exposure path and the query-result path can never
+        # disagree about what an unlisted column defaults to.
+        from agents.system.governance_filter import get_governance
+        default_action = get_governance().default_action
 
         for table, meta in schema.items():
             raw_cols = meta.get("columns", [])
@@ -462,18 +473,18 @@ class DBMaster:
                 permitted = {}
                 for col_name, col_meta in raw_cols.items():
                     schema_sensitivity = col_meta.get("sensitivity", "allow").upper()
-                    constitution_rule  = col_rules.get(col_name, "ALLOW").upper()
+                    constitution_rule  = col_rules.get(col_name, default_action).upper()
 
                     # BLOCK wins from either source
                     if schema_sensitivity == "BLOCK" or constitution_rule == "BLOCK":
                         continue
-                    # ANONYMIZE from either source → mark it
+                    # ANONYMIZE from either source → mark it. No blanket
+                    # role bypass here — a role that should see an anonymized
+                    # column unmasked gets that via an explicit ALLOW_<ROLE>
+                    # rule in column_rules (see governance_filter.ALLOW_ROLE_MAP),
+                    # not a second, conflicting check in this method.
                     anonymize = (schema_sensitivity == "ANONYMIZE" or
                                  constitution_rule == "ANONYMIZE")
-                    # Managers and above skip anonymization
-                    if anonymize and role in ("manager", "dept_head", "division_head",
-                                              "c_suite", "ceo", "admin"):
-                        anonymize = False
                     permitted[col_name] = {**col_meta, "anonymize": anonymize}
 
                 if permitted:
@@ -487,7 +498,7 @@ class DBMaster:
             else:
                 permitted_cols = [
                     col for col in raw_cols
-                    if col_rules.get(col, "ALLOW").upper() != "BLOCK"
+                    if col_rules.get(col, default_action).upper() != "BLOCK"
                 ]
                 if permitted_cols:
                     filtered[table] = {
