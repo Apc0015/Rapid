@@ -5,7 +5,7 @@ QdrantStore — Qdrant-backed vector store for RAPID.
 Mirrors the DeptFaissIndex interface exactly so DocMaster needs no changes.
 Enable via env var: USE_QDRANT=true  (QDRANT_URL defaults to http://localhost:6333)
 
-Each department maps to one Qdrant collection (rapid_<dept_tag>).
+Each tenant department maps to one Qdrant collection (rapid_<tenant_id>_<dept_tag>).
 Dense vectors are stored in Qdrant; BM25 is kept in memory, rebuilt from
 Qdrant payload on startup — same as the FAISS path.
 
@@ -42,11 +42,12 @@ class DeptQdrantIndex:
     BM25 index is kept in memory and rebuilt from Qdrant payload on first use.
     """
 
-    def __init__(self, dept_tag: str, dim: int, url: str) -> None:
+    def __init__(self, dept_tag: str, dim: int, url: str, tenant_id: str = "default") -> None:
         self.dept_tag   = dept_tag
+        self.tenant_id  = _safe_collection_component(tenant_id)
         self.dim        = dim
         self._url       = url
-        self._collection = f"rapid_{dept_tag}"
+        self._collection = f"rapid_{self.tenant_id}_{_safe_collection_component(dept_tag)}"
         self._lock       = asyncio.Lock()
 
         # Lazy state — populated on first _ensure_ready() call
@@ -224,16 +225,23 @@ class DeptQdrantIndex:
 
 # ── Registry: one index per dept ─────────────────────────────────────────────
 
-_qdrant_indices: Dict[str, DeptQdrantIndex] = {}
+_qdrant_indices: Dict[tuple[str, str, int, str], DeptQdrantIndex] = {}
 
 
 def get_qdrant_dept_index(
     dept_tag: str,
     dim: int = 768,
     url: Optional[str] = None,
+    tenant_id: str = "default",
 ) -> DeptQdrantIndex:
     """Get or create the Qdrant index for a department."""
-    if dept_tag not in _qdrant_indices:
-        resolved_url = url or os.getenv("QDRANT_URL", "http://localhost:6333")
-        _qdrant_indices[dept_tag] = DeptQdrantIndex(dept_tag, dim=dim, url=resolved_url)
-    return _qdrant_indices[dept_tag]
+    resolved_url = url or os.getenv("QDRANT_URL", "http://localhost:6333")
+    key = (_safe_collection_component(tenant_id), _safe_collection_component(dept_tag), dim, resolved_url)
+    if key not in _qdrant_indices:
+        _qdrant_indices[key] = DeptQdrantIndex(dept_tag, dim=dim, url=resolved_url, tenant_id=tenant_id)
+    return _qdrant_indices[key]
+
+
+def _safe_collection_component(value: str) -> str:
+    safe = "".join(char for char in str(value) if char.isalnum() or char in {"-", "_"})
+    return safe or "default"

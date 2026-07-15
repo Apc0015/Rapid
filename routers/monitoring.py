@@ -9,6 +9,7 @@ routers/monitoring.py — Observability endpoints.
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import PlainTextResponse
 
 from agents.system.audit_logger import get_audit
 from agents.system.governance_filter import get_governance
@@ -80,3 +81,35 @@ async def health():
         "db_schemas_loaded":   list(db._schema_cache.keys()),
         "constitution_loaded": bool(get_governance().constitution),
     }
+
+
+@router.get("/health/live")
+async def liveness():
+    return {"status": "alive"}
+
+
+@router.get("/health/ready")
+async def readiness():
+    checks = {}
+    try:
+        from infrastructure.job_queue import get_job_queue
+        checks["job_queue"] = {"status": "ready", "stats": get_job_queue().stats()}
+    except Exception as error:
+        checks["job_queue"] = {"status": "failed", "error": str(error)}
+    try:
+        from infrastructure.organization_data_store import get_organization_data_store
+        get_organization_data_store().list_sources("__readiness__")
+        checks["organization_data"] = {"status": "ready"}
+    except Exception as error:
+        checks["organization_data"] = {"status": "failed", "error": str(error)}
+    ready = all(check["status"] == "ready" for check in checks.values())
+    if not ready:
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
+    return {"status": "ready", "checks": checks}
+
+
+@router.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    from infrastructure.job_queue import get_job_queue
+    from infrastructure.runtime_metrics import get_runtime_metrics
+    return PlainTextResponse(get_runtime_metrics().prometheus(get_job_queue().stats()), media_type="text/plain; version=0.0.4")

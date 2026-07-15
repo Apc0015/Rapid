@@ -2,9 +2,9 @@ from __future__ import annotations
 """
 FaissStore — per-department FAISS vector index.
 
-Each department gets its own isolated index:
-  data/faiss/{dept_tag}/index.faiss   — FAISS flat L2 index
-  data/faiss/{dept_tag}/metadata.json — chunk metadata (id, text, source)
+Each tenant department gets its own isolated index:
+  data/faiss/{tenant_id}/{dept_tag}/index.faiss   — FAISS flat L2 index
+  data/faiss/{tenant_id}/{dept_tag}/metadata.json — chunk metadata (id, text, source)
 
 Design:
   - IndexFlatIP (inner product on normalised vectors = cosine similarity)
@@ -47,10 +47,11 @@ class DeptFaissIndex:
     All methods are async-safe via a per-instance lock.
     """
 
-    def __init__(self, dept_tag: str, dim: int, base_dir: str = _FAISS_BASE_DIR):
+    def __init__(self, dept_tag: str, dim: int, base_dir: str = _FAISS_BASE_DIR, tenant_id: str = "default"):
         self.dept_tag  = dept_tag
+        self.tenant_id = _safe_scope_component(tenant_id)
         self.dim       = dim
-        self._dir      = Path(base_dir) / dept_tag
+        self._dir      = Path(base_dir) / self.tenant_id / _safe_scope_component(dept_tag)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._index_path = self._dir / "index.faiss"
         self._meta_path  = self._dir / "metadata.json"
@@ -80,8 +81,11 @@ class DeptFaissIndex:
                 self._metadata.pop(existing_pos)
                 self._rebuild_index_from_meta()
 
+            if self._index is None:
+                self._index = faiss.IndexFlatIP(self.dim)
+
             self._index.add(vec.reshape(1, -1))
-            self._metadata.append({"chunk_id": chunk_id, "text": text, "source": source})
+            self._metadata.append({"chunk_id": chunk_id, "text": text, "source": source, "vec": vec.tolist()})
             self._rebuild_bm25()
             self._save()
 
@@ -99,17 +103,19 @@ class DeptFaissIndex:
                 for _, _, _, emb in chunks
             ])
             dim = vecs.shape[1]
-            if self._index is None:
-                self._index = faiss.IndexFlatIP(dim)
-
             # Remove any existing entries with same chunk_ids
             new_ids = {c[0] for c in chunks}
             self._metadata = [m for m in self._metadata if m["chunk_id"] not in new_ids]
             self._rebuild_index_from_meta()
+            if self._index is None:
+                self._index = faiss.IndexFlatIP(dim)
 
             self._index.add(vecs)
-            for chunk_id, text, source, _ in chunks:
-                self._metadata.append({"chunk_id": chunk_id, "text": text, "source": source})
+            for chunk_id, text, source, embedding in chunks:
+                self._metadata.append({
+                    "chunk_id": chunk_id, "text": text, "source": source,
+                    "vec": _normalise(np.array(embedding, dtype=np.float32)).tolist(),
+                })
 
             self._rebuild_bm25()
             self._save()
@@ -239,11 +245,11 @@ class DeptFaissIndex:
 
 # ── Registry: one index per dept ─────────────────────────────────────────────
 
-_indices: Dict[str, DeptFaissIndex] = {}
+_indices: Dict[tuple[str, str, str, int], DeptFaissIndex] = {}
 
 
 def get_dept_index(
-    dept_tag: str, dim: int = 768, base_dir: str = _FAISS_BASE_DIR
+    dept_tag: str, dim: int = 768, base_dir: str = _FAISS_BASE_DIR, tenant_id: Optional[str] = None,
 ) -> "DeptFaissIndex":
     """
     Get or create the vector index for a department.
@@ -252,15 +258,17 @@ def get_dept_index(
     The returned object exposes the same async interface regardless of backend.
     """
     import os
+    tenant_id = tenant_id or _current_tenant_id()
     if os.getenv("USE_QDRANT", "").lower() in ("true", "1", "yes"):
         from infrastructure.qdrant_store import get_qdrant_dept_index
-        return get_qdrant_dept_index(dept_tag, dim=dim)  # type: ignore[return-value]
-    if dept_tag not in _indices:
-        _indices[dept_tag] = DeptFaissIndex(dept_tag, dim=dim, base_dir=base_dir)
-    return _indices[dept_tag]
+        return get_qdrant_dept_index(dept_tag, dim=dim, tenant_id=tenant_id)  # type: ignore[return-value]
+    key = (str(Path(base_dir).resolve()), _safe_scope_component(tenant_id), _safe_scope_component(dept_tag), dim)
+    if key not in _indices:
+        _indices[key] = DeptFaissIndex(dept_tag, dim=dim, base_dir=base_dir, tenant_id=tenant_id)
+    return _indices[key]
 
 
-def all_dept_indices() -> Dict[str, DeptFaissIndex]:
+def all_dept_indices() -> Dict[tuple[str, str, str, int], DeptFaissIndex]:
     return dict(_indices)
 
 
@@ -272,6 +280,20 @@ def _normalise(vec: np.ndarray) -> np.ndarray:
     if norm == 0:
         return vec
     return vec / norm
+
+
+def _safe_scope_component(value: str) -> str:
+    """Prevent a tenant or department key from escaping the FAISS base directory."""
+    safe = "".join(char for char in str(value) if char.isalnum() or char in {"-", "_"})
+    return safe or "default"
+
+
+def _current_tenant_id() -> str:
+    try:
+        from infrastructure.db_master import get_current_tenant
+        return get_current_tenant()
+    except Exception:
+        return "default"
 
 
 def _atomic_write(path: Path, data):

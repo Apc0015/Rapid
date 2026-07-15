@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    tesseract-ocr \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -16,7 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create runtime directories
-RUN mkdir -p data/db data/faiss data/chroma data/documents data/backups logs
+RUN mkdir -p data/db data/faiss data/chroma data/documents data/backups logs && \
+    useradd --create-home --uid 10001 rapid && chown -R rapid:rapid /app
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -24,6 +27,8 @@ ENV RAPID_ENV=production
 
 # Expose API port
 EXPOSE 8000
+
+USER rapid
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

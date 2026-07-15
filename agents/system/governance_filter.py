@@ -127,7 +127,7 @@ class GovernanceFilter:
         )
 
         # Executive roles always see all departments
-        executive_all = {"ceo", "board_member", "admin", "manager"}
+        executive_all = {"ceo", "board_member", "admin"}
         if role in executive_all:
             depts = ALL_DEPTS
         elif permitted_depts is not None:

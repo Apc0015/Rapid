@@ -30,8 +30,24 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+          npm ci --prefix frontend
+
+      - name: Validate React frontend
+        run: |
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          npm audit --audit-level=high --prefix frontend
 
       - name: Create required data dirs
         run: |
@@ -41,6 +57,14 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short --asyncio-mode=auto
+
+      - name: Run portal and load validation
+        run: |
+          python -m uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/rapid-api.log 2>&1 &
+          npm run preview --prefix frontend > /tmp/rapid-web.log 2>&1 &
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8000/health/ready && break || sleep 1; done
+          python scripts/portal_e2e.py --output /tmp/portal-e2e
+          python scripts/load_smoke.py --requests 100 --concurrency 20
 
       - name: Upload test results
         if: always()

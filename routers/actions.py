@@ -78,17 +78,29 @@ def _get_tenant_id(project_id: str) -> str:
     return row["tenant_id"] if row else "default"
 
 
-def _all_active_projects() -> list[dict]:
-    """Return list of {project_id, tenant_id, db_path} for active projects."""
+def _all_active_projects(tenant_id: str) -> list[dict]:
+    """Return active projects for exactly one authenticated tenant."""
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT project_id, tenant_id, db_path FROM project_registry WHERE status != 'archived'",
+            """SELECT project_id, tenant_id, db_path FROM project_registry
+               WHERE status != 'archived' AND tenant_id=?""",
+            (tenant_id,),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def _current_tenant(current_user: dict) -> str:
+    """Tokens issued before tenant claims remain single-org ``default`` tokens."""
+    return str(current_user.get("tenant_id") or "default")
+
+
+def _require_action_reviewer(current_user: dict) -> None:
+    if current_user.get("role") not in {"admin", "ceo", "manager", "dept_head", "division_head", "c_suite"}:
+        raise HTTPException(status_code=403, detail="Reviewer role required to decide an action")
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -114,7 +126,7 @@ async def get_action_stats(
 
     Returns total counts by status and category.
     """
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     merged_by_status: dict[str, int] = {}
     merged_by_cat:    dict[str, int] = {}
     total = 0
@@ -154,7 +166,7 @@ async def list_actions(
     """
     effective_status = status if status is not None else ActionStatus.PENDING
 
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     all_actions = []
 
     for proj in projects:
@@ -187,7 +199,7 @@ async def get_action(
     """
     Fetch a single action by ID (searches across all active project DBs).
     """
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     for proj in projects:
         try:
             aq = get_action_queue(proj["db_path"], proj["project_id"], proj["tenant_id"])
@@ -211,8 +223,9 @@ async def approve_action(
 
     The current authenticated user becomes the reviewer.
     """
+    _require_action_reviewer(current_user)
     user_id  = current_user["sub"]
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
 
     for proj in projects:
         try:
@@ -250,8 +263,9 @@ async def reject_action(
 
     Provide a reason in the request body. The current user becomes the reviewer.
     """
+    _require_action_reviewer(current_user)
     user_id  = current_user["sub"]
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
 
     for proj in projects:
         try:
@@ -287,7 +301,7 @@ async def notification_count(
     current_user: dict = Depends(get_current_user),
 ):
     """Fast unread notification count across all projects."""
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     total = 0
     for proj in projects:
         try:
@@ -304,7 +318,7 @@ async def list_notifications(
     current_user: dict = Depends(get_current_user),
 ):
     """List all unread (not dismissed) notifications across all active projects."""
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     all_notifs = []
 
     for proj in projects:
@@ -330,7 +344,7 @@ async def list_all_notifications(
     current_user: dict = Depends(get_current_user),
 ):
     """List all notifications (read + unread) with optional filters."""
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
     all_notifs = []
 
     for proj in projects:
@@ -356,7 +370,7 @@ async def mark_notification_read(
 ):
     """Mark a notification as read by the current user."""
     user_id  = current_user["sub"]
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
 
     for proj in projects:
         try:
@@ -392,7 +406,7 @@ async def dismiss_notification(
     current_user: dict = Depends(get_current_user),
 ):
     """Dismiss a notification (hide from unread list)."""
-    projects = _all_active_projects()
+    projects = _all_active_projects(_current_tenant(current_user))
 
     for proj in projects:
         try:

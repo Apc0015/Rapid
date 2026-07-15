@@ -34,13 +34,12 @@ RAPID/
 ├── shared.py                  Agent singletons (imported by main + routers)
 ├── constitution.yaml          Column-level governance rules (Allow/Anonymize/Block)
 │
-├── frontend/                  Web UI (static HTML/CSS/JS — no build step)
-│   ├── config.js              API URL configuration (loaded first on every page)
-│   ├── rapid-design.css       RAPID design system tokens (shared stylesheet)
-│   ├── index.html             Login page
-│   ├── app.html               Main app (all non-admin roles)
-│   ├── admin.html             Admin panel
-│   └── onboarding.html        New-organization setup wizard
+├── frontend/                  React 19 + TypeScript product portal
+│   ├── src/                   Routes, pages, components, API client, and tests
+│   ├── package.json           Vite build, test, preview, and typecheck scripts
+│   ├── rapid-design.css       RAPID design tokens
+│   ├── product-shell.css      Shared product component styles
+│   └── Dockerfile             Builds the production React artifact for nginx
 │
 ├── nginx/
 │   └── nginx.conf             Serves frontend, proxies /api/* → FastAPI
@@ -141,15 +140,16 @@ make dev
 API available at: `http://localhost:8000`
 API docs at: `http://localhost:8000/docs`
 
-### 3. Open the frontend
-
-Open `frontend/index.html` directly in your browser, or serve with any static file server:
+### 3. Run the React frontend
 
 ```bash
-cd frontend && python3 -m http.server 3000
+npm ci --prefix frontend
+npm run dev --prefix frontend
 ```
 
-Then navigate to `http://localhost:3000`.
+Then navigate to `http://localhost:4173/login`.
+
+`./start.sh` starts both FastAPI and the React portal with one command.
 
 Default admin credentials are in `data/users.yaml`.
 
@@ -179,7 +179,7 @@ docker-compose up -d
 ```
 
 This starts:
-- **nginx** on port `80` — serves the frontend and proxies `/api/*` to the backend
+- **nginx** on port `80` — serves the compiled React portal and proxies `/api/*` to the backend
 - **rapid** (internal) — FastAPI with 2 gunicorn workers
 - **ollama** on port `11434` — local LLM inference (optional)
 
@@ -192,7 +192,7 @@ docker exec rapid-ollama-1 ollama pull llama3.2
 ### 5. Access RAPID
 
 Open `http://your-server-ip` in a browser. The nginx config routes:
-- `/*` → frontend static files
+- `/*` → React application with history fallback
 - `/api/*` → FastAPI backend
 
 ---
@@ -264,7 +264,7 @@ make dirs          # Create required runtime directories
 ```
 Browser → nginx (:80)
             │
-            ├── /* → frontend/          (static HTML/CSS/JS)
+            ├── /* → React/Vite build   (TypeScript SPA)
             └── /api/* → rapid (:8000)  (FastAPI)
                               │
                     Intent Classification

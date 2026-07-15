@@ -24,6 +24,8 @@ from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -82,6 +84,14 @@ from routers.packs          import router as packs_router
 # Phase 9: Dynamic Agent Management
 from routers.custom_agents    import router as custom_agents_router
 from routers.nl_agent_creator import router as nl_agent_creator_router
+from routers.people_ops       import router as people_ops_router
+from routers.organization     import router as organization_router
+from routers.organization_data import router as organization_data_router
+from routers.organization_integrations import router as organization_integrations_router
+from routers.organization_structure import router as organization_structure_router
+from routers.workspace import router as workspace_router
+from routers.tenant_admin import router as tenant_admin_router
+from routers.jobs import router as jobs_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,10 +147,12 @@ def _get_cors_origins() -> list[str]:
         "http://localhost:3001",
         "http://localhost:8080",
         "http://localhost:5500",   # VS Code Live Server
+        "http://localhost:4173",   # RAPID static product preview
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:5500",
+        "http://127.0.0.1:4173",
     ]
 
 
@@ -220,6 +232,34 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_cleanup_loop())
     memory_cleanup_task = asyncio.create_task(_memory_cleanup_loop())
 
+    # Schedule execution is opt-in because production deployments should assign
+    # exactly one worker replica this responsibility.
+    scheduler_task = None
+    if os.getenv("RAPID_ENABLE_SCHEDULER", "false").lower() in {"1", "true", "yes"}:
+        interval_seconds = max(30, int(os.getenv("RAPID_SCHEDULER_INTERVAL_SECONDS", "60")))
+
+        async def _automation_scheduler_loop():
+            from infrastructure.integration_hub import get_integration_hub
+            while True:
+                try:
+                    results = get_integration_hub().dispatch_due_schedules()
+                    if results:
+                        logger.info("Organization scheduler dispatched %s run(s)", len(results))
+                except Exception as e:
+                    logger.warning(f"Organization scheduler failed: {e}")
+                await asyncio.sleep(interval_seconds)
+
+        scheduler_task = asyncio.create_task(_automation_scheduler_loop())
+        logger.info("Organization scheduler started (interval=%ss)", interval_seconds)
+
+    from infrastructure.job_handlers import register_default_job_handlers
+    register_default_job_handlers()
+    job_worker_task = None
+    if os.getenv("RAPID_ENABLE_JOB_WORKER", "false").lower() in {"1", "true", "yes"}:
+        from infrastructure.job_queue import run_worker
+        job_worker_task = asyncio.create_task(run_worker(poll_seconds=float(os.getenv("RAPID_JOB_POLL_SECONDS", "1"))))
+        logger.info("Durable job worker started")
+
     # Phase 5: Start background project monitor
     try:
         from infrastructure.monitoring_loop import get_background_monitor
@@ -252,20 +292,27 @@ async def lifespan(app: FastAPI):
 
     if _monitor_task:
         _monitor_task.cancel()
+    if scheduler_task:
+        scheduler_task.cancel()
+    if job_worker_task:
+        job_worker_task.cancel()
     logger.info("RAPID shutting down")
 
 
 # ── Application ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="RAPID",
-    description="RAG Application for Private Instant Deployment",
-    version="2.0.0",
+    title="RAPID Organization OS",
+    description="Governed autonomous workflows for organization-wide operations",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 # Rate limiting
 app.state.limiter = limiter
+
+from infrastructure.security_middleware import RapidSecurityMiddleware
+app.add_middleware(RapidSecurityMiddleware)
 
 
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -289,9 +336,14 @@ app.add_middleware(
     allow_origins=_get_cors_origins(),
     allow_origin_regex=_get_cors_origin_regex(),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key", "X-Rapid-Signature", "X-Rapid-Timestamp"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+if os.getenv("RAPID_ENV", "development") == "production":
+    allowed_hosts = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+    if allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # Register routers
 app.include_router(auth_router)
@@ -327,6 +379,14 @@ app.include_router(packs_router)
 # Phase 9: Dynamic Agent Management
 app.include_router(custom_agents_router)
 app.include_router(nl_agent_creator_router)
+app.include_router(people_ops_router)
+app.include_router(organization_router)
+app.include_router(organization_data_router)
+app.include_router(organization_integrations_router)
+app.include_router(organization_structure_router)
+app.include_router(workspace_router)
+app.include_router(tenant_admin_router)
+app.include_router(jobs_router)
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
