@@ -233,3 +233,31 @@ export interface ProjectIntelligenceAnswer {
   agent_used: string;
   domain_intent: string;
 }
+
+export interface ProjectMember {
+  user_id: string;
+  dept_id: string;
+  role: string;
+  access_level: string;
+  joined_at?: string;
+}
+
+export interface ProjectDocument {
+  doc_id?: string;
+  title: string;
+  file_format?: string;
+  report_type?: string;
+  pages?: number;
+  produced_by?: string;
+  created_at: string;
+  download_url?: string;
+}
+
+export interface PortfolioIntelligenceAnswer {
+  answer: string;
+  confidence: number;
+  projects_used: string[];
+  data_gaps: string[];
+  project_count: number;
+  duration_ms: number;
+}

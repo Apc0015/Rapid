@@ -344,6 +344,43 @@ class OrganizationDataStore:
         finally:
             conn.close()
 
+    def list_documents(self, tenant_id: str, department: str | None = None, *,
+                       classifications: set[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Return document metadata and indexing state without exposing chunk content."""
+        conn = self._connect()
+        try:
+            where, params = ["d.tenant_id=?"], [tenant_id]
+            if department:
+                where.append("d.department=?")
+                params.append(department)
+            if classifications:
+                placeholders = ",".join("?" for _ in classifications)
+                where.append(f"d.classification IN ({placeholders})")
+                params.extend(sorted(classifications))
+            rows = conn.execute(
+                f"""SELECT d.*, s.name AS source_name,
+                    COUNT(c.id) AS chunk_count,
+                    SUM(CASE WHEN c.embedding_status='indexed' THEN 1 ELSE 0 END) AS indexed_chunks,
+                    SUM(CASE WHEN c.embedding_status='failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                    MAX(c.embedding_model) AS embedding_model
+                    FROM organization_documents d
+                    JOIN organization_data_sources s ON s.id=d.source_id AND s.tenant_id=d.tenant_id
+                    LEFT JOIN organization_document_chunks c ON c.document_id=d.id AND c.tenant_id=d.tenant_id
+                    WHERE {' AND '.join(where)}
+                    GROUP BY d.id ORDER BY d.created_at DESC LIMIT ?""",
+                [*params, max(1, min(limit, 500))],
+            ).fetchall()
+            documents = []
+            for row in rows:
+                item = dict(row)
+                item["pii_summary"] = json.loads(item.pop("pii_summary_json") or "{}")
+                item["document_id"] = item.pop("id")
+                item["index_status"] = "failed" if item.pop("failed_chunks") else ("indexed" if item["chunk_count"] and item["indexed_chunks"] == item["chunk_count"] else "pending")
+                documents.append(item)
+            return documents
+        finally:
+            conn.close()
+
     def get_document_chunks(self, tenant_id: str, document_id: str) -> list[dict[str, Any]]:
         conn = self._connect()
         try:
@@ -384,6 +421,9 @@ class OrganizationDataStore:
             conn.commit()
         finally:
             conn.close()
+
+    def mark_document_index_failed(self, tenant_id: str, document_id: str, error: str) -> None:
+        self.mark_document_indexed(tenant_id, document_id, f"error:{error}"[:160], status="failed")
 
     def has_indexed_chunks(self, tenant_id: str, department: str) -> bool:
         conn = self._connect()

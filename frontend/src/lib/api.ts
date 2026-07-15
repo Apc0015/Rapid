@@ -63,3 +63,32 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, aut
   if (!response.ok) throw new ApiError(body.detail || 'The request could not be completed.', response.status);
   return body as T;
 }
+
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken();
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const body = (await response.json().catch(() => ({}))) as { detail?: string };
+  if (response.status === 401) {
+    clearSession();
+    window.dispatchEvent(new Event('rapid:unauthorized'));
+  }
+  if (!response.ok) throw new ApiError(body.detail || 'The upload could not be completed.', response.status);
+  return body as T;
+}
+
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${getApiBaseUrl()}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string };
+    throw new ApiError(body.detail || 'The document could not be downloaded.', response.status);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = url; anchor.download = filename; anchor.click();
+  URL.revokeObjectURL(url);
+}

@@ -73,6 +73,31 @@ def test_document_ingestion_redacts_pii_before_chunk_storage(tmp_path):
     assert "[EMAIL_REDACTED]" in chunk_text
 
 
+def test_document_list_enforces_classification_and_exposes_index_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAPID_ORGANIZATION_DATA_DB_PATH", str(tmp_path / "organization_data.db"))
+    app = FastAPI()
+    app.include_router(router)
+    principal = {"sub": "operator", "role": "admin", "tenant_id": "acme", "depts": ["hr"]}
+    app.dependency_overrides[get_current_user] = lambda: principal
+    client = TestClient(app)
+
+    source = client.post("/organization/data/sources", json={
+        "department": "hr", "name": "Compensation files", "source_type": "unstructured", "classification": "confidential",
+    }).json()["source"]
+    document = client.post(f"/organization/data/sources/{source['id']}/documents", json={
+        "name": "Compensation policy", "content": "Compensation ranges require manager approval.",
+    }).json()["document"]
+    assert client.get("/organization/data/documents").json()["documents"][0]["index_status"] == "pending"
+
+    principal.update({"sub": "employee", "role": "employee", "depts": ["hr"]})
+    assert client.get("/organization/data/documents").json()["documents"] == []
+    assert client.get(f"/organization/data/documents/{document['document_id']}").status_code == 403
+
+    principal.update({"sub": "manager", "role": "manager"})
+    visible = client.get("/organization/data/documents").json()["documents"]
+    assert visible[0]["classification"] == "confidential"
+
+
 def test_legacy_document_ingestion_checks_department_membership():
     from fastapi import HTTPException
     from routers.documents import _require_department_access

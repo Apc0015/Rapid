@@ -7,7 +7,12 @@ from infrastructure.job_queue import register_job_handler
 async def _index_document(job: dict):
     from infrastructure.organization_rag import get_organization_rag
     payload = job["payload"]
-    return await get_organization_rag().index_document(job["tenant_id"], payload["department"], payload["document_id"])
+    try:
+        return await get_organization_rag().index_document(job["tenant_id"], payload["department"], payload["document_id"])
+    except Exception as error:
+        from infrastructure.organization_data_store import get_organization_data_store
+        get_organization_data_store().mark_document_index_failed(job["tenant_id"], payload["document_id"], str(error))
+        raise
 
 
 async def _process_webhook(job: dict):

@@ -1,7 +1,7 @@
-import { ArrowUpRight, BookOpen, FileText, RefreshCw, Search as SearchIcon, Sparkles } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Download, FileText, Pencil, Plus, RefreshCw, Search as SearchIcon, Sparkles, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { DEPARTMENTS, type WorkspaceView } from '../../constants';
-import { apiRequest, getProfile } from '../../lib/api';
+import { apiRequest, downloadFile, getProfile } from '../../lib/api';
 import { formatDate, formatTime, formatValue, initials } from '../../lib/format';
 import type {
   ActionItem,
@@ -11,13 +11,17 @@ import type {
   Meeting,
   NotificationItem,
   OperatingReport,
+  PortfolioIntelligenceAnswer,
+  ProjectDocument,
   ProjectHealth,
   ProjectIntelligenceAnswer,
+  ProjectMember,
   RegisteredProject,
   SearchResult,
   WorkspaceData,
 } from '../../types';
 import { EmptyState, LoadingState, StatusTag } from '../../components/StatusTag';
+import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/ToastProvider';
 import { Link } from 'react-router-dom';
 
@@ -131,7 +135,7 @@ function projectDepartment(project: RegisteredProject): string {
   return DEPARTMENTS[project.primary_dept_id ?? ''] ?? project.primary_dept_id ?? 'Organization-wide';
 }
 
-function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
+function ProjectIntelligence({ projects, onRefresh }: { projects: RegisteredProject[]; onRefresh: () => Promise<void> }) {
   const [selectedId, setSelectedId] = useState('');
   const [health, setHealth] = useState<ProjectHealth | null>(null);
   const [skills, setSkills] = useState<AgentSkill[]>([]);
@@ -141,6 +145,13 @@ function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
   const [mode, setMode] = useState('analysis');
   const [answer, setAnswer] = useState<ProjectIntelligenceAnswer | null>(null);
   const [asking, setAsking] = useState(false);
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [portfolioOpen, setPortfolioOpen] = useState(false);
+  const [portfolioAnswer, setPortfolioAnswer] = useState<PortfolioIntelligenceAnswer | null>(null);
+  const [skillOutput, setSkillOutput] = useState<{ title: string; message?: string; preview?: string; download_url?: string } | null>(null);
 
   useEffect(() => { if (!selectedId && projects[0]) setSelectedId(projects[0].project_id); }, [projects, selectedId]);
   useEffect(() => {
@@ -150,9 +161,11 @@ function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
     void Promise.all([
       apiRequest<{ health: ProjectHealth }>(`/projects/${selectedId}/status`),
       apiRequest<{ skills: AgentSkill[] }>(`/projects/${selectedId}/skills/available`),
-    ]).then(([healthResponse, skillResponse]) => {
+      apiRequest<{ documents: ProjectDocument[] }>(`/projects/${selectedId}/documents`),
+      apiRequest<{ members: ProjectMember[] }>(`/projects/${selectedId}`),
+    ]).then(([healthResponse, skillResponse, documentResponse, projectResponse]) => {
       if (!active) return;
-      setHealth(healthResponse.health); setSkills(skillResponse.skills);
+      setHealth(healthResponse.health); setSkills(skillResponse.skills); setDocuments(documentResponse.documents); setMembers(projectResponse.members);
     }).catch((issue) => {
       if (active) setError(issue instanceof Error ? issue.message : 'Project intelligence could not load.');
     }).finally(() => { if (active) setLoading(false); });
@@ -172,11 +185,49 @@ function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
     finally { setAsking(false); }
   }
 
-  if (!projects.length) return <section className="workspace-section project-intelligence-empty"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Project-aware agents activate after a project data space is provisioned.</p></div><Sparkles size={17} className="section-icon" /></div><EmptyState>No governed projects are connected to this tenant yet.</EmptyState></section>;
+  async function executeSkill(skill: AgentSkill) {
+    if (!selectedId) return;
+    setError(''); setSkillOutput(null);
+    try {
+      const output = await apiRequest<{ title: string; message?: string; preview?: string; download_url?: string }>(`/projects/${selectedId}/skills/execute`, { method: 'POST', body: JSON.stringify({ skill_id: skill.skill_id, params: {}, enqueue_action: true }) });
+      setSkillOutput(output);
+      if (output.download_url) await downloadFile(output.download_url, output.title);
+    } catch (issue) { setError(issue instanceof Error ? issue.message : 'The skill could not run.'); }
+  }
+
+  async function updateProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!selectedId) return; const form = new FormData(event.currentTarget);
+    try {
+      await apiRequest(`/projects/${selectedId}`, { method: 'PATCH', body: JSON.stringify({ name: form.get('name'), description: form.get('description'), status: form.get('status'), priority: form.get('priority'), target_end_date: form.get('target_end_date') || null }) });
+      setEditOpen(false); await onRefresh();
+    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Project could not be updated.'); }
+  }
+
+  async function addMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!selectedId) return; const form = new FormData(event.currentTarget);
+    try {
+      await apiRequest(`/projects/${selectedId}/members`, { method: 'POST', body: JSON.stringify({ user_id: form.get('user_id'), dept_id: form.get('dept_id'), role: form.get('role'), access_level: form.get('access_level') }) });
+      const response = await apiRequest<{ members: ProjectMember[] }>(`/projects/${selectedId}`); setMembers(response.members); event.currentTarget.reset();
+    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Member could not be added.'); }
+  }
+
+  async function removeMember(member: ProjectMember) {
+    if (!selectedId) return;
+    try { await apiRequest(`/projects/${selectedId}/members/${encodeURIComponent(member.user_id)}`, { method: 'DELETE' }); setMembers((current) => current.filter((item) => item.user_id !== member.user_id)); }
+    catch (issue) { setError(issue instanceof Error ? issue.message : 'Member could not be removed.'); }
+  }
+
+  async function analyzePortfolio(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const form = new FormData(event.currentTarget); const projectIds = form.getAll('project_ids').map(String);
+    try { setPortfolioAnswer(await apiRequest<PortfolioIntelligenceAnswer>('/projects/portfolio/query', { method: 'POST', body: JSON.stringify({ query: form.get('query'), project_ids: projectIds }) })); }
+    catch (issue) { setError(issue instanceof Error ? issue.message : 'Portfolio analysis could not run.'); }
+  }
+
+  if (!projects.length) return <section className="workspace-section project-intelligence-empty"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Project-aware agents activate after a project data space is provisioned.</p></div><Sparkles size={17} className="section-icon" /></div><EmptyState>Create a project to provision its isolated data space and agent team.</EmptyState></section>;
 
   const selected = projects.find((project) => project.project_id === selectedId);
   const leadRisk = health?.open_risks?.[0];
-  return <section className="workspace-section project-intelligence"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Ask a scoped agent, review live health, and use only skills permitted for the selected project.</p></div><Sparkles size={17} className="section-icon" /></div>
+  return <><section className="workspace-section project-intelligence"><div className="section-title"><div><p className="section-context">Connected projects</p><h2>Project intelligence</h2><p>Ask a scoped agent, review live health, and use only skills permitted for the selected project.</p></div><div className="project-command-bar"><button className="icon-button icon-only" type="button" aria-label="Edit project" title="Edit project" onClick={() => setEditOpen(true)}><Pencil size={14} /></button><button className="icon-button icon-only" type="button" aria-label="Manage project team" title="Manage project team" onClick={() => setTeamOpen(true)}><UsersRound size={14} /></button><button className="product-button secondary compact" type="button" onClick={() => setPortfolioOpen(true)}>Portfolio</button></div></div>
     <div className="project-intelligence-layout">
       <div className="project-registry" role="list" aria-label="Registered projects">{projects.map((project) => <button className={project.project_id === selectedId ? 'selected' : ''} key={project.project_id} type="button" onClick={() => setSelectedId(project.project_id)}><span><strong>{project.name}</strong><small>{projectDepartment(project)} · {project.member_role ?? 'member'}</small></span><StatusTag value={project.status} /></button>)}</div>
       <div className="project-intelligence-detail">
@@ -185,11 +236,13 @@ function ProjectIntelligence({ projects }: { projects: RegisteredProject[] }) {
           {health?.status ? <div className="project-data-note">{health.message || 'This project data space is ready for configuration.'}</div> : <div className="project-health-grid">{health?.kpis?.slice(0, 3).map((kpi) => <article key={kpi.kpi_name}><span>{kpi.kpi_name}</span><strong>{formatValue('value', kpi.current_value)}</strong><small>{kpi.target_value === null || kpi.target_value === undefined ? kpi.status : `Target ${formatValue('value', kpi.target_value)}`}</small></article>)}{leadRisk ? <article><span>Open risks</span><strong>{health?.open_risks?.length}</strong><small>{leadRisk.title}</small></article> : null}</div>}
           <form id="project-intelligence-form" className="project-query-form" onSubmit={askProject}><label><span>Ask about this project</span><textarea id="project-intelligence-question" value={question} onChange={(event) => setQuestion(event.target.value)} minLength={2} required placeholder="Identify the current delivery risks" /></label><div><select aria-label="Project analysis mode" value={mode} onChange={(event) => setMode(event.target.value)}><option value="query">Question</option><option value="analysis">Analysis</option><option value="planning">Plan</option><option value="reporting">Report</option></select><button className="product-button primary" type="submit" disabled={asking}>{asking ? 'Analyzing…' : 'Ask project agent'}</button></div></form>
           {answer ? <section id="project-intelligence-output" className="project-answer"><div><strong>Scoped answer</strong><span>{Math.round(answer.confidence * 100)}% confidence · {answer.agent_used.replaceAll('_', ' ')}</span></div><p>{answer.answer}</p>{answer.data_gaps.length ? <small>Data gaps: {answer.data_gaps.join(' · ')}</small> : null}</section> : null}
-          <div className="project-skills"><div><h3>Available agent skills</h3><p>{skills.length} skills are permitted for this project’s department.</p></div><ul>{skills.slice(0, 6).map((skill) => <li key={skill.skill_id}><span><strong>{skill.skill_id.replaceAll('_', ' ')}</strong><small>{skill.description || 'Generated output with review controls.'}</small></span><em>{skill.output_format}</em></li>)}</ul></div>
+          <div className="project-documents"><div><h3>Generated documents</h3><p>{documents.length} outputs available to this project.</p></div>{documents.length ? <ul>{documents.slice(0, 4).map((document) => <li key={`${document.title}-${document.created_at}`}><span><strong>{document.title}</strong><small>{document.file_format || 'file'} · {formatDate(document.created_at, false)}</small></span>{document.download_url ? <button className="icon-button icon-only" type="button" aria-label={`Download ${document.title}`} title="Download document" onClick={() => void downloadFile(document.download_url!, document.title)}><Download size={13} /></button> : null}</li>)}</ul> : <small>No generated documents yet.</small>}</div>
+          <div className="project-skills"><div><h3>Available agent skills</h3><p>{skills.length} skills are permitted for this project’s department.</p></div><ul>{skills.slice(0, 6).map((skill) => <li key={skill.skill_id}><span><strong>{skill.skill_id.replaceAll('_', ' ')}</strong><small>{skill.description || 'Generated output with review controls.'}</small></span><div><em>{skill.output_format}</em><button className="icon-button icon-only" type="button" aria-label={`Run ${skill.skill_id}`} title="Run skill" onClick={() => void executeSkill(skill)}><Sparkles size={13} /></button></div></li>)}</ul></div>
+          {skillOutput ? <section className="project-answer"><div><strong>{skillOutput.title}</strong><span>Queued for review</span></div><p>{skillOutput.message || skillOutput.preview || 'Skill output generated.'}</p></section> : null}
         </> : null}
       </div>
     </div>
-  </section>;
+  </section><Modal id="project-edit-dialog" open={editOpen} onClose={() => setEditOpen(false)} title="Edit project" context="Project configuration"><form className="stack-form" onSubmit={updateProject}><label className="admin-label">Name<input name="name" defaultValue={selected?.name ?? ''} required /></label><label className="admin-label">Description<textarea name="description" defaultValue={selected?.description ?? ''} /></label><label className="admin-label">Status<select name="status" defaultValue={selected?.status ?? 'active'}><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option></select></label><label className="admin-label">Priority<select name="priority" defaultValue={selected?.priority ?? 'medium'}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><label className="admin-label">Target date<input name="target_end_date" type="date" defaultValue={selected?.target_end_date?.slice(0, 10) ?? ''} /></label><button className="product-button primary" type="submit">Save project</button></form></Modal><Modal id="project-team-dialog" open={teamOpen} onClose={() => setTeamOpen(false)} title="Project team" context="Scoped access"><form className="project-member-form" onSubmit={addMember}><label className="admin-label">User ID<input name="user_id" required placeholder="USR-…" /></label><label className="admin-label">Department<select name="dept_id" defaultValue={selected?.primary_dept_id ?? 'ops'}>{Object.entries(DEPARTMENTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label className="admin-label">Role<select name="role" defaultValue="member"><option value="owner">Owner</option><option value="manager">Manager</option><option value="member">Member</option><option value="viewer">Viewer</option></select></label><label className="admin-label">Access<select name="access_level" defaultValue="standard"><option value="full">Full</option><option value="manager">Manager</option><option value="standard">Standard</option><option value="readonly">Read only</option></select></label><button className="product-button primary" type="submit">Add member</button></form><div className="member-list">{members.map((member) => <article key={member.user_id}><div><strong>{member.user_id}</strong><small>{member.role} · {member.access_level} · {DEPARTMENTS[member.dept_id] ?? member.dept_id}</small></div><button className="product-button secondary compact" type="button" onClick={() => void removeMember(member)}>Remove</button></article>)}</div></Modal><Modal id="portfolio-dialog" open={portfolioOpen} onClose={() => setPortfolioOpen(false)} title="Portfolio analysis" context="Cross-project intelligence"><form className="stack-form" onSubmit={analyzePortfolio}><label className="admin-label">Question<textarea name="query" minLength={2} required placeholder="Which projects need executive attention?" /></label><fieldset className="project-picker"><legend>Projects in scope</legend>{projects.map((project) => <label key={project.project_id}><input name="project_ids" type="checkbox" value={project.project_id} defaultChecked />{project.name}</label>)}</fieldset><button className="product-button primary" type="submit">Analyze portfolio</button></form>{portfolioAnswer ? <section className="project-answer"><div><strong>Portfolio answer</strong><span>{Math.round(portfolioAnswer.confidence * 100)}% confidence</span></div><p>{portfolioAnswer.answer}</p>{portfolioAnswer.data_gaps.length ? <small>Data gaps: {portfolioAnswer.data_gaps.join(' · ')}</small> : null}</section> : null}</Modal></>;
 }
 
 export function ProjectsView({ data }: WorkspaceViewProps) {
@@ -197,16 +250,23 @@ export function ProjectsView({ data }: WorkspaceViewProps) {
   const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
   const [registryError, setRegistryError] = useState('');
   const [registryLoading, setRegistryLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   const projects = data.records.filter((record) => record.entity_type === 'project').filter((record) => `${record.name} ${JSON.stringify(record.data)}`.toLowerCase().includes(query.toLowerCase()));
-  useEffect(() => {
-    let active = true;
-    void apiRequest<{ projects: RegisteredProject[] }>('/projects').then((response) => {
-      if (active) setRegisteredProjects(response.projects);
-    }).catch((issue) => { if (active) setRegistryError(issue instanceof Error ? issue.message : 'Project registry could not load.'); })
-      .finally(() => { if (active) setRegistryLoading(false); });
-    return () => { active = false; };
-  }, []);
-  return <section className="portal-view active" data-portal-view="projects"><div className="toolbar"><label className="filter-input"><span>Filter demo projects</span><input id="project-filter" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Project, owner, or status" /></label><span id="project-total" className="result-count">{countLabel(projects.length, 'demo project')}</span></div><div id="projects-list" className="entity-grid">{projects.length ? projects.map((record) => <EntityCard key={record.id} record={record} fields={['status', 'owner', 'target']} />) : <EmptyState>No projects match this filter.</EmptyState>}</div><div id="project-registry-status" aria-live="polite">{registryLoading ? <LoadingState compact /> : registryError ? <div className="portal-error"><strong>Project registry unavailable.</strong><p>{registryError}</p></div> : <ProjectIntelligence projects={registeredProjects} />}</div></section>;
+  async function loadRegistry() {
+    setRegistryLoading(true); setRegistryError('');
+    try { setRegisteredProjects((await apiRequest<{ projects: RegisteredProject[] }>('/projects')).projects); }
+    catch (issue) { setRegistryError(issue instanceof Error ? issue.message : 'Project registry could not load.'); }
+    finally { setRegistryLoading(false); }
+  }
+  useEffect(() => { void loadRegistry(); }, []);
+  async function createProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    try {
+      await apiRequest('/projects', { method: 'POST', body: JSON.stringify({ name: form.get('name'), description: form.get('description') || null, dept_id: form.get('dept_id'), project_type: form.get('project_type'), priority: form.get('priority'), target_end_date: form.get('target_end_date') || null }) });
+      setCreateOpen(false); await loadRegistry();
+    } catch (issue) { setRegistryError(issue instanceof Error ? issue.message : 'Project could not be created.'); }
+  }
+  return <><section className="portal-view active" data-portal-view="projects"><div className="toolbar"><label className="filter-input"><span>Filter demo projects</span><input id="project-filter" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Project, owner, or status" /></label><span id="project-total" className="result-count">{countLabel(projects.length, 'demo project')}</span><button id="create-project" className="product-button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={14} /> New project</button></div><div id="projects-list" className="entity-grid">{projects.length ? projects.map((record) => <EntityCard key={record.id} record={record} fields={['status', 'owner', 'target']} />) : <EmptyState>No projects match this filter.</EmptyState>}</div><div id="project-registry-status" aria-live="polite">{registryLoading ? <LoadingState compact /> : registryError ? <div className="portal-error"><strong>Project registry unavailable.</strong><p>{registryError}</p></div> : <ProjectIntelligence projects={registeredProjects} onRefresh={loadRegistry} />}</div></section><Modal id="create-project-dialog" open={createOpen} onClose={() => setCreateOpen(false)} title="New project" context="Provision a governed workspace"><form className="stack-form" onSubmit={createProject}><label className="admin-label">Name<input name="name" required maxLength={160} /></label><label className="admin-label">Description<textarea name="description" maxLength={2000} /></label><label className="admin-label">Department<select name="dept_id" defaultValue="ops">{Object.entries(DEPARTMENTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label className="admin-label">Project type<select name="project_type" defaultValue="single_dept"><option value="single_dept">Single department</option><option value="cross_dept">Cross-functional</option></select></label><label className="admin-label">Priority<select name="priority" defaultValue="medium"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><label className="admin-label">Target date<input name="target_end_date" type="date" /></label><button className="product-button primary" type="submit">Create project</button></form></Modal></>;
 }
 
 export function LibraryView() {

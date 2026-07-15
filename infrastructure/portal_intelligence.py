@@ -142,9 +142,9 @@ class PortalIntelligenceService:
         history: list[dict[str, str]],
     ) -> Any:
         # Imported lazily to keep the product router independent during startup and tests.
-        from main import ChatMessage, QueryRequest, _run_query
+        from infrastructure.query_service import ChatMessage, QueryRequest, run_query
 
-        return await _run_query(
+        return await run_query(
             QueryRequest(
                 query=question,
                 history=[ChatMessage(role=item.get("role", "user"), content=item.get("content", "")) for item in history[-6:]],

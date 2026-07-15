@@ -36,6 +36,20 @@ def _require_operator(current_user: dict) -> None:
         raise HTTPException(status_code=403, detail="Department operator role required")
 
 
+def _allowed_classifications(current_user: dict) -> set[str]:
+    role = str(current_user.get("role") or "employee")
+    if role in {"admin", "ceo"}:
+        return {"internal", "confidential", "restricted"}
+    if role in {"manager", "dept_head"}:
+        return {"internal", "confidential"}
+    return {"internal"}
+
+
+def _require_classification(current_user: dict, classification: str) -> None:
+    if classification not in _allowed_classifications(current_user):
+        raise HTTPException(status_code=403, detail="Your role does not permit this data classification")
+
+
 def _raise(error: OrganizationDataError) -> None:
     status = 404 if "not found" in str(error).lower() or "outside" in str(error).lower() else 400
     raise HTTPException(status_code=status, detail=str(error))
@@ -78,6 +92,7 @@ def _source_with_access(source_id: str, current_user: dict) -> dict:
     except OrganizationDataError as error:
         _raise(error)
     _require_department(current_user, source["department"])
+    _require_classification(current_user, source["classification"])
     return source
 
 
@@ -94,6 +109,7 @@ async def list_sources(department: Optional[str] = None, current_user: dict = De
 async def register_source(body: SourceRequest, current_user: dict = Depends(get_current_user)):
     _require_operator(current_user)
     _require_department(current_user, body.department)
+    _require_classification(current_user, body.classification)
     try:
         return {"source": get_organization_data_store().register_source(_tenant(current_user), body.department, body.name, body.source_type, body.connector_type, body.classification, current_user["sub"], body.config)}
     except OrganizationDataError as error:
@@ -173,12 +189,54 @@ async def sync_source(source_id: str, body: SourceSyncRequest, current_user: dic
     return {"job": job}
 
 
+@router.get("/documents")
+async def list_documents(
+    department: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+    current_user: dict = Depends(get_current_user),
+):
+    if department:
+        _require_department(current_user, department)
+    documents = get_organization_data_store().list_documents(
+        _tenant(current_user), department, classifications=_allowed_classifications(current_user), limit=limit,
+    )
+    allowed_departments = _allowed_departments(current_user)
+    return {"documents": [document for document in documents if document["department"] in allowed_departments]}
+
+
+@router.get("/rag/status")
+async def rag_status(department: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if department:
+        _require_department(current_user, department)
+    documents = get_organization_data_store().list_documents(
+        _tenant(current_user), department, classifications=_allowed_classifications(current_user), limit=500,
+    )
+    documents = [document for document in documents if document["department"] in _allowed_departments(current_user)]
+    counts = {"pending": 0, "indexed": 0, "failed": 0}
+    for document in documents:
+        counts[document["index_status"]] = counts.get(document["index_status"], 0) + 1
+    return {"documents": len(documents), "indexing": counts, "pii_documents": sum(bool(document["pii_summary"]) for document in documents)}
+
+
+@router.get("/documents/{document_id}")
+async def get_document(document_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        document = get_organization_data_store().get_document(_tenant(current_user), document_id)
+        _require_department(current_user, document["department"])
+        _require_classification(current_user, document["classification"])
+        document.pop("chunks", None)
+        return {"document": document}
+    except OrganizationDataError as error:
+        _raise(error)
+
+
 @router.post("/documents/{document_id}/index", status_code=202)
 async def index_document(document_id: str, current_user: dict = Depends(get_current_user)):
     _require_operator(current_user)
     try:
         document = get_organization_data_store().get_document(_tenant(current_user), document_id)
         _require_department(current_user, document["department"])
+        _require_classification(current_user, document["classification"])
         job = get_job_queue().enqueue(
             _tenant(current_user), "organization.rag.index_document",
             {"document_id": document_id, "department": document["department"]},
@@ -193,6 +251,9 @@ async def index_document(document_id: str, current_user: dict = Depends(get_curr
 async def search_documents(body: SearchRequest, current_user: dict = Depends(get_current_user)):
     _require_department(current_user, body.department)
     try:
-        return await get_organization_rag().search(_tenant(current_user), body.department, body.query, body.source_id, body.limit)
+        return await get_organization_rag().search(
+            _tenant(current_user), body.department, body.query, body.source_id, body.limit,
+            allowed_classifications=_allowed_classifications(current_user),
+        )
     except OrganizationDataError as error:
         _raise(error)

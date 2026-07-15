@@ -62,6 +62,10 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
             desktop.click(f'.portal-nav [data-view="{view}"]')
             desktop.locator(selectors[view]).nth(count - 1).wait_for()
             assert desktop.locator(selectors[view]).count() == count, view
+        desktop.click('.portal-nav [data-view="projects"]')
+        desktop.click("#create-project")
+        desktop.wait_for_function("document.querySelector('#create-project-dialog').open === true")
+        desktop.locator("#create-project-dialog").get_by_role("button", name="Close dialog").click()
 
         desktop.click('.portal-nav [data-view="meetings"]')
         desktop.locator("#meetings-list [data-meeting]").first.click()
