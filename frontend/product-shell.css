@@ -19,6 +19,56 @@ button, input, select { font: inherit; } button { cursor: pointer; } .product-pa
 @media (max-width: 620px) { .workspace-header, .header-actions { flex-direction: column; align-items: flex-start; }.metric-strip { grid-template-columns: 1fr 1fr; }.metric-strip article:nth-child(2) { border-right: 0; }.metric-strip article:nth-child(-n+2) { border-bottom: 1px solid var(--product-border); }.meeting-row { grid-template-columns: 1fr auto; }.meeting-time { grid-column: 1 / -1; }.workspace-grid, .meeting-detail-grid { grid-template-columns: 1fr; }.action-row { align-items: flex-start; flex-direction: column; }.auth-panel { padding: 22px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; scroll-behavior: auto !important; } }
 
+/* Product refinement: shared shell, controls, and responsive navigation. */
+.product-page { background-image: none; }
+.portal-shell { grid-template-columns: 256px minmax(0, 1fr); }
+.portal-sidebar { padding: 16px 12px; background: #080d17; }
+.portal-main { width: min(1480px, 100%); padding: 32px 40px 56px; }
+.portal-header { align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--product-border); }
+.portal-header h1 { font-size: 26px; font-weight: 700; line-height: 1.18; text-wrap: balance; }
+.portal-header p:not(.auth-kicker) { max-width: 68ch; line-height: 1.55; text-wrap: pretty; }
+.header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.product-button { min-height: 36px; border-radius: 7px; transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), opacity var(--t-fast), transform var(--t-fast); }
+.product-button:active, .icon-button:active, .portal-nav button:active, .portal-nav a:active { transform: translateY(1px); }
+.icon-button { min-width: 32px; min-height: 32px; display: inline-grid; place-items: center; transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast); }
+.icon-button:hover { color: var(--text); background: var(--surface-elevated); border-color: var(--border-active); }
+.portal-nav .nav-group-label { margin: 18px 10px 6px; letter-spacing: .06em; }
+.portal-nav button, .portal-nav a { min-height: 36px; border-radius: 7px; transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast); }
+.portal-nav button > span, .portal-nav a > span { background: transparent; border-color: transparent; }
+.portal-nav button:hover > span, .portal-nav a:hover > span { color: #b9c8e6; background: var(--surface-elevated); border-color: var(--product-border); }
+.portal-nav button.active > span, .portal-nav a.active > span { background: #1a2c51; border-color: #2b4b86; }
+.workspace-switcher { margin: 16px 5px 20px; padding: 10px; transition: background var(--t-fast), border-color var(--t-fast); }
+.workspace-switcher:hover { background: var(--surface-elevated); border-color: var(--border-active); }
+.workspace-section { border-radius: 10px; }
+.section-title h2, .report-head h2 { text-wrap: balance; }
+.meeting-row, .department-summary, .connection-row, .admin-card, .search-result, .notification-row { transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast); }
+.meeting-row:hover, .department-summary:hover { transform: translateY(-1px); }
+.navigation-scrim { position: fixed; z-index: 15; inset: 0; width: 100%; height: 100%; background: rgba(1, 5, 13, .66); cursor: default; }
+
+@media (max-width: 950px) {
+  .portal-main { padding: 22px 18px 44px; }
+  .portal-header { align-items: flex-start; padding-bottom: 16px; }
+  .portal-header .header-actions { justify-content: flex-start; }
+  .admin-shell { display: block; }
+  .admin-shell .portal-sidebar { position: fixed; width: min(286px, calc(100vw - 48px)); height: 100vh; min-height: 100vh; transform: translateX(-105%); box-shadow: var(--shadow-lg); }
+  .admin-shell .portal-sidebar.open { transform: translateX(0); }
+  .admin-shell .workspace-switcher, .admin-shell .product-sidebar-footer { display: flex; }
+  .admin-shell .portal-nav { display: grid; overflow: visible; padding-top: 0; }
+  .admin-shell .portal-nav .nav-group-label { display: block; }
+  .admin-shell .portal-nav a { width: 100%; white-space: normal; }
+}
+
+@media (max-width: 700px) {
+  .portal-main { padding: 22px 16px 38px; }
+  .portal-header h1 { font-size: 23px; }
+  .product-button { min-height: 40px; }
+  .icon-button, .intelligence-submit { min-width: 40px; min-height: 40px; }
+  .header-actions { gap: 8px; }
+  .sandbox-badge { min-height: 28px; display: inline-flex; align-items: center; }
+  .invite-form, .team-form { grid-template-columns: 1fr; }
+  .invite-form .product-button, .team-form .product-button { width: 100%; }
+}
+
 /* Unified organization portal */
 .portal-shell { grid-template-columns: 248px minmax(0, 1fr); }
 .portal-sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; }

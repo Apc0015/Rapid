@@ -64,15 +64,15 @@ async def callback(code: str = "", state: str = "", error: str = ""):
     """Google redirects here after the user grants Drive access."""
     frontend_base = os.getenv("FRONTEND_BASE_URL", "http://localhost")
     if error:
-        return RedirectResponse(f"{frontend_base}/app.html?cloud_error=gdrive&detail={error}")
+        return RedirectResponse(f"{frontend_base}/workspace/settings?cloud_error=gdrive&detail={error}")
     if not code or not state:
-        return RedirectResponse(f"{frontend_base}/app.html?cloud_error=gdrive&detail=missing_params")
+        return RedirectResponse(f"{frontend_base}/workspace/settings?cloud_error=gdrive&detail=missing_params")
     try:
         from infrastructure.gdrive_connector import exchange_code
         await exchange_code(code, state)
     except Exception as e:
-        return RedirectResponse(f"{frontend_base}/app.html?cloud_error=gdrive&detail={str(e)[:80]}")
-    return RedirectResponse(f"{frontend_base}/app.html?cloud_connected=gdrive")
+        return RedirectResponse(f"{frontend_base}/workspace/settings?cloud_error=gdrive&detail={str(e)[:80]}")
+    return RedirectResponse(f"{frontend_base}/workspace/settings?cloud_connected=gdrive")
 
 
 @router.get("/status")

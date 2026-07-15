@@ -143,6 +143,24 @@ export interface SearchResult {
   data: Record<string, string | number | boolean | null>;
 }
 
+export interface IntelligenceEvidence {
+  kind: 'workspace_record' | 'knowledge';
+  title: string;
+  excerpt: string;
+}
+
+export interface IntelligenceAnswer {
+  id: string;
+  answer: string;
+  confidence: number;
+  warning?: string | null;
+  departments: string[];
+  action: string;
+  provider?: string | null;
+  mode: 'agent_engine' | 'scoped_evidence_fallback';
+  evidence: IntelligenceEvidence[];
+}
+
 export interface OperatingReport {
   department: { key: string; name: string };
   generated_at: string;

@@ -92,6 +92,7 @@ from routers.organization_structure import router as organization_structure_rout
 from routers.workspace import router as workspace_router
 from routers.tenant_admin import router as tenant_admin_router
 from routers.jobs import router as jobs_router
+from routers.intelligence import router as intelligence_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -387,6 +388,7 @@ app.include_router(organization_structure_router)
 app.include_router(workspace_router)
 app.include_router(tenant_admin_router)
 app.include_router(jobs_router)
+app.include_router(intelligence_router)
 
 
 # ── Request / Response models ─────────────────────────────────────────────────

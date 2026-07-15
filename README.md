@@ -19,9 +19,13 @@ RAPID connects your organization's documents, databases, and workflows to a team
 
 ---
 
-## Repository Maintenance
+## Unified Product Architecture
 
-The retired standalone `product_os_demo.html` and one-time `scripts/migrations/upgrade_departments.py` script are intentionally not part of the supported application. Deliver future schema changes as versioned, tested migrations.
+RAPID has one supported product surface: the React portal in `frontend/src`. It covers the organization workspace, meetings, actions, people, CRM, projects, tickets, reports, search, notifications, tenant administration, and operations.
+
+The FastAPI routers and agent services are the product backend, not a second application. They provide governed agent orchestration, RAG, task runs, integrations, skills, project intelligence, and tenant administration to the React portal. The retired standalone HTML entry points have been removed; integrations and OAuth callbacks return to React routes.
+
+The local synthetic organization is the default product demo and test dataset. Customer databases, SSO, LLM providers, and live connectors are opt-in tenant configuration, not required to explore the product.
 
 ---
 

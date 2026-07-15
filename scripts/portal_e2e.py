@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -28,11 +29,13 @@ def assert_accessible(page, label: str) -> None:
         raise AssertionError(f"Accessibility violations on {label}: {details}")
 
 
-def run(base_url: str, output: Path) -> None:
+def run(base_url: str, output: Path, api_url: str = "") -> None:
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        if api_url:
+            desktop.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         errors: list[str] = []
         desktop.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         desktop.on("pageerror", lambda error: errors.append(str(error)))
@@ -46,6 +49,10 @@ def run(base_url: str, output: Path) -> None:
         assert desktop.locator("#organization-name").inner_text() == "Northstar Labs"
         assert desktop.locator(".portal-nav [data-view]").count() == 11
         assert desktop.locator("#root").get_attribute("data-reactroot") is None
+        desktop.fill("#intelligence-question", "What is the Atlas renewal risk?")
+        desktop.click(".intelligence-submit")
+        desktop.wait_for_selector(".intelligence-response")
+        assert "atlas" in desktop.locator(".intelligence-response").inner_text().lower()
         assert_accessible(desktop, "workspace overview")
         desktop.screenshot(path=str(output / "desktop-overview.png"), full_page=True)
 
@@ -106,6 +113,8 @@ def run(base_url: str, output: Path) -> None:
         token = desktop.evaluate("localStorage.getItem('rapid_people_ops_token')")
         profile = desktop.evaluate("localStorage.getItem('rapid_profile')")
         mobile = browser.new_page(viewport={"width": 390, "height": 844})
+        if api_url:
+            mobile.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         mobile.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         mobile.on("pageerror", lambda error: errors.append(str(error)))
         mobile.goto(f"{base_url}/login", wait_until="domcontentloaded")
@@ -125,6 +134,37 @@ def run(base_url: str, output: Path) -> None:
         assert overflow <= 1, f"mobile horizontal overflow: {overflow}px"
         assert_accessible(mobile, "mobile people directory")
         mobile.screenshot(path=str(output / "mobile-people.png"), full_page=True)
+        mobile.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
+        mobile.wait_for_selector("#features-list .admin-card")
+        mobile.locator(".mobile-topbar button[aria-label='Open navigation']").click()
+        mobile.wait_for_timeout(300)
+        admin_sidebar = mobile.locator(".admin-shell .portal-sidebar").bounding_box()
+        assert admin_sidebar and admin_sidebar["x"] == 0 and admin_sidebar["width"] >= 280
+        mobile.screenshot(path=str(output / "mobile-admin-navigation.png"))
+        mobile.locator(".admin-shell .portal-nav a", has_text="Users and access").click()
+        mobile.wait_for_url("**/admin/users")
+        mobile.wait_for_selector("#invite-form")
+        overflow = mobile.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert overflow <= 1, f"mobile admin horizontal overflow: {overflow}px"
+        assert_accessible(mobile, "mobile administration")
+        mobile.screenshot(path=str(output / "mobile-admin-users.png"), full_page=True)
+
+        tablet = browser.new_page(viewport={"width": 924, "height": 980})
+        if api_url:
+            tablet.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
+        tablet.goto(f"{base_url}/login", wait_until="domcontentloaded")
+        tablet.evaluate("([token, profile]) => { localStorage.setItem('rapid_people_ops_token', token); localStorage.setItem('rapid_profile', profile); }", [token, profile])
+        tablet.goto(f"{base_url}/workspace/overview", wait_until="domcontentloaded")
+        tablet.wait_for_selector("#portal-sidebar")
+        sidebar = tablet.locator("#portal-sidebar").bounding_box()
+        assert sidebar and sidebar["x"] == 0 and sidebar["width"] >= 220
+        assert not tablet.locator("#portal-sidebar .mobile-only.icon-only").is_visible()
+        overflow = tablet.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert overflow <= 1, f"tablet horizontal overflow: {overflow}px"
+        assert_accessible(tablet, "tablet workspace overview")
+        tablet.screenshot(path=str(output / "tablet-overview.png"), full_page=True)
+        tablet.close()
+
         desktop.goto(f"{base_url}/workspace/overview", wait_until="domcontentloaded")
         desktop.wait_for_selector("#reset-demo")
         desktop.once("dialog", lambda dialog: dialog.accept())
@@ -139,6 +179,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:4173")
     parser.add_argument("--output", type=Path, default=Path("/tmp/rapid-portal-e2e"))
+    parser.add_argument("--api-url", default="")
     arguments = parser.parse_args()
-    run(arguments.base_url.rstrip("/"), arguments.output)
+    run(arguments.base_url.rstrip("/"), arguments.output, arguments.api_url.rstrip("/"))
     print(f"Portal E2E passed. Screenshots: {arguments.output}")

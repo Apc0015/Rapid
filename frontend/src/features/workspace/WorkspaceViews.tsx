@@ -72,23 +72,24 @@ export function OverviewView({ data, navigate, openMeeting, changeAction, openDe
   const openActions = actions.filter((action) => action.status !== 'done').slice(0, 5);
   return (
     <section className="portal-view active" data-portal-view="overview">
-      <div className="metric-strip">
+      <section className="metric-strip overview-metrics" aria-label="Organization snapshot">
         <article><span>People</span><strong id="metric-employees">{overview.metrics.employees}</strong><small>Active organization records</small></article>
         <article><span>Departments</span><strong id="metric-departments">{overview.metrics.departments}</strong><small>Agent teams enabled</small></article>
         <article><span>Open actions</span><strong id="metric-actions">{overview.metrics.open_actions}</strong><small>Cross-team commitments</small></article>
         <article><span>Upcoming meetings</span><strong id="metric-meetings">{overview.metrics.upcoming_meetings}</strong><small>Scheduled operating cadence</small></article>
+      </section>
+      <div className="workspace-grid overview-workboard">
+        <section className="workspace-section overview-priorities"><div className="section-title"><div><p className="section-context">Operating focus</p><h2>Priority actions</h2><p>Commitments that need a decision or owner update.</p></div><button className="text-button" type="button" onClick={() => navigate('actions')}>View queue</button></div><div id="overview-actions" className="action-list">{openActions.length ? openActions.map((action) => <ActionRow key={action.id} action={action} onChange={changeAction} />) : <EmptyState>No open actions.</EmptyState>}</div></section>
+        <section className="workspace-section overview-meetings"><div className="section-title"><div><p className="section-context">Operating cadence</p><h2>Upcoming meetings</h2><p>Decision forums across the organization.</p></div><button className="text-button" type="button" onClick={() => navigate('meetings')}>View calendar</button></div><div id="overview-meetings"><MeetingList meetings={meetings.filter((meeting) => meeting.status === 'scheduled').slice(0, 4)} onOpen={openMeeting} /></div></section>
       </div>
-      <section className="workspace-section record-panel">
-        <div className="section-title"><div><h2>Business records</h2><p>Linked data across every operational domain.</p></div><button className="text-button" type="button" onClick={() => navigate('search')}>Search all</button></div>
+      <section className="workspace-section overview-departments"><div className="section-title"><div><p className="section-context">Organization index</p><h2>Department health</h2><p>Ten operating teams in one governed workspace.</p></div><button className="text-button" type="button" onClick={() => navigate('departments')}>Open departments</button></div><div id="overview-departments" className="department-grid">{overview.departments.map((department) => <button className="department-summary" data-report-department={department.key} key={department.key} type="button" onClick={() => openDepartmentReport(department.key)}><span className={`signal-dot ${department.status}`} /><div><strong>{department.name}</strong><small>{department.lead}</small></div><b>{department.open_actions} open</b></button>)}</div></section>
+      <section className="overview-records" aria-label="Business record catalog">
+        <div><strong>Business records</strong><span>Connected operational data</span></div>
         <div id="records-catalog" className="record-catalog">
           {overview.record_catalog.map((record) => <button className="record-count" data-record-type={record.type} key={record.type} type="button" onClick={() => ['customer', 'lead', 'deal'].includes(record.type) ? navigate('crm') : record.type === 'employee' ? navigate('people') : record.type === 'project' ? navigate('projects') : record.type === 'ticket' ? navigate('tickets') : navigate('search')}><strong>{record.count}</strong><span>{record.type.replaceAll('_', ' ')}</span></button>)}
         </div>
+        <button className="text-button" type="button" onClick={() => navigate('search')}>Search all</button>
       </section>
-      <div className="workspace-grid">
-        <section className="workspace-section"><div className="section-title"><div><h2>Upcoming meetings</h2><p>Decision forums across the organization.</p></div><button className="text-button" type="button" onClick={() => navigate('meetings')}>View calendar</button></div><div id="overview-meetings"><MeetingList meetings={meetings.filter((meeting) => meeting.status === 'scheduled').slice(0, 4)} onOpen={openMeeting} /></div></section>
-        <aside className="workspace-section"><div className="section-title"><div><h2>Priority actions</h2><p>Commitments needing attention.</p></div><button className="text-button" type="button" onClick={() => navigate('actions')}>View queue</button></div><div id="overview-actions" className="action-list">{openActions.length ? openActions.map((action) => <ActionRow key={action.id} action={action} onChange={changeAction} />) : <EmptyState>No open actions.</EmptyState>}</div></aside>
-      </div>
-      <section className="workspace-section overview-departments"><div className="section-title"><div><h2>Department health</h2><p>Ten operating teams in one governed workspace.</p></div><button className="text-button" type="button" onClick={() => navigate('departments')}>Open departments</button></div><div id="overview-departments" className="department-grid">{overview.departments.map((department) => <button className="department-summary" data-report-department={department.key} key={department.key} type="button" onClick={() => openDepartmentReport(department.key)}><span className={`signal-dot ${department.status}`} /><div><strong>{department.name}</strong><small>{department.lead}</small></div><b>{department.open_actions} open</b></button>)}</div></section>
     </section>
   );
 }

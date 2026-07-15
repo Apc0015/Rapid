@@ -21,6 +21,7 @@ import {
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { VIEW_META, type WorkspaceView } from '../../constants';
+import { IntelligenceDock } from '../intelligence/IntelligenceDock';
 import { initials } from '../../lib/format';
 import type { WorkspaceOverview } from '../../types';
 
@@ -131,6 +132,7 @@ export function WorkspaceShell({
             {primaryLabel ? <button id="primary-action" className="product-button primary" type="button" onClick={onPrimaryAction}>{primaryLabel}</button> : null}
           </div>
         </header>
+        <IntelligenceDock view={view} />
         {children}
       </main>
       {navigationOpen ? <button className="navigation-scrim" type="button" aria-label="Close navigation" onClick={() => onNavigationOpen(false)} /> : null}
