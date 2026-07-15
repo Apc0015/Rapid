@@ -19,6 +19,12 @@ RAPID connects your organization's documents, databases, and workflows to a team
 
 ---
 
+## Repository Maintenance
+
+The retired standalone `product_os_demo.html` and one-time `scripts/migrations/upgrade_departments.py` script are intentionally not part of the supported application. Deliver future schema changes as versioned, tested migrations.
+
+---
+
 ## Project Structure
 
 ```
