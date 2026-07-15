@@ -123,6 +123,12 @@ export interface Readiness {
 export interface JobsResponse {
   stats: Record<string, number>;
   jobs?: unknown[];
+  workers?: {
+    status: string;
+    active_count: number;
+    max_age_seconds: number;
+    workers: Array<{ worker_id: string; started_at: string; last_seen_at: string }>;
+  };
 }
 
 export interface WorkspaceData {
@@ -240,6 +246,31 @@ export interface ProjectMember {
   role: string;
   access_level: string;
   joined_at?: string;
+}
+
+export interface PortalUser {
+  login_key: string;
+  rapid_user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  division?: string | null;
+  permitted_departments: string[];
+}
+
+export interface AgentAction {
+  action_id: string;
+  project_id: string;
+  agent_dept: string;
+  action_type: string;
+  category: string;
+  title: string;
+  description: string;
+  reasoning: string;
+  output_file_path?: string | null;
+  priority: string;
+  status: string;
+  created_at: string;
 }
 
 export interface ProjectDocument {

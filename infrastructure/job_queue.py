@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import os
 import sqlite3
@@ -67,6 +68,13 @@ class JobQueue:
                     ON durable_jobs(status, available_at, priority, created_at);
                 CREATE INDEX IF NOT EXISTS idx_durable_jobs_tenant
                     ON durable_jobs(tenant_id, status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS job_worker_heartbeats (
+                    worker_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_worker_heartbeats_seen
+                    ON job_worker_heartbeats(last_seen_at DESC);
                 """
             )
             conn.commit()
@@ -165,6 +173,45 @@ class JobQueue:
             query += " GROUP BY status"
             counts = {row["status"]: row["count"] for row in conn.execute(query, args).fetchall()}
             return {"queued": counts.get("queued", 0), "running": counts.get("running", 0), "retry": counts.get("retry", 0), "completed": counts.get("completed", 0), "dead_letter": counts.get("dead_letter", 0)}
+        finally:
+            conn.close()
+
+    def heartbeat(self, worker_id: str) -> dict[str, str]:
+        """Record a worker lease so deployments can verify background processing."""
+        if not worker_id.strip():
+            raise JobQueueError("Worker id is required")
+        now = self._now().isoformat()
+        conn = self._connect()
+        try:
+            conn.execute(
+                """INSERT INTO job_worker_heartbeats (worker_id, started_at, last_seen_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(worker_id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
+                (worker_id.strip(), now, now),
+            )
+            conn.commit()
+            return {"worker_id": worker_id.strip(), "last_seen_at": now}
+        finally:
+            conn.close()
+
+    def worker_status(self, max_age_seconds: int = 45) -> dict[str, Any]:
+        """Return workers with a current lease without exposing stale instances."""
+        max_age = max(5, min(int(max_age_seconds), 3600))
+        cutoff = (self._now() - timedelta(seconds=max_age)).isoformat()
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                """SELECT worker_id, started_at, last_seen_at FROM job_worker_heartbeats
+                   WHERE last_seen_at >= ? ORDER BY last_seen_at DESC""",
+                (cutoff,),
+            ).fetchall()
+            workers = [dict(row) for row in rows]
+            return {
+                "status": "ready" if workers else "unavailable",
+                "active_count": len(workers),
+                "max_age_seconds": max_age,
+                "workers": workers,
+            }
         finally:
             conn.close()
 
@@ -291,10 +338,22 @@ async def run_worker(queue: JobQueue | None = None, *, worker_id: str | None = N
     queue = queue or get_job_queue()
     worker_id = worker_id or f"worker-{os.getpid()}"
     queue.recover_stale()
-    while True:
-        processed = await process_one(queue, worker_id)
-        if not processed:
-            await asyncio.sleep(max(0.1, poll_seconds))
+
+    async def maintain_heartbeat() -> None:
+        while True:
+            queue.heartbeat(worker_id)
+            await asyncio.sleep(10)
+
+    heartbeat_task = asyncio.create_task(maintain_heartbeat())
+    try:
+        while True:
+            processed = await process_one(queue, worker_id)
+            if not processed:
+                await asyncio.sleep(max(0.1, poll_seconds))
+    finally:
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
 
 
 def get_job_queue() -> JobQueue:

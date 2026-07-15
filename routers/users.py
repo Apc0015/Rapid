@@ -172,9 +172,9 @@ async def division_reject(req_id: str, body: DivisionReviewBody,
 
 @router.get("/users/list")
 async def portal_users(current_user: dict = Depends(get_current_user)):
-    """Admin/manager/dept_head: list all portal users."""
-    if current_user.get("role") not in ("admin", "manager", "dept_head"):
-        raise HTTPException(status_code=403, detail="Admin, manager, or dept_head required")
+    """Leadership roles: list portal users for scoped team assignment."""
+    if current_user.get("role") not in ("admin", "ceo", "c_suite", "manager", "dept_head", "division_head"):
+        raise HTTPException(status_code=403, detail="A leadership role is required")
     return {"users": list_portal_users()}
 
 

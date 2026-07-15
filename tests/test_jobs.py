@@ -51,3 +51,15 @@ async def test_registered_handler_completes_a_job(tmp_path):
 
     assert processed["status"] == "completed"
     assert queue.get("acme", queued["id"])["result"]["record_count"] == 2
+
+
+def test_worker_heartbeats_report_only_live_workers(tmp_path):
+    queue = JobQueue(str(tmp_path / "jobs.db"))
+    heartbeat = queue.heartbeat("worker-api")
+
+    status = queue.worker_status(max_age_seconds=10)
+
+    assert heartbeat["worker_id"] == "worker-api"
+    assert status["status"] == "ready"
+    assert status["active_count"] == 1
+    assert status["workers"][0]["worker_id"] == "worker-api"

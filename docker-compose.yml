@@ -51,6 +51,7 @@ services:
       AUDIT_LOG_PATH: ${AUDIT_LOG_PATH:-data/audit.log}
       RAPID_JOB_DB_PATH: data/db/jobs.db
       RAPID_ENABLE_JOB_WORKER: "false"
+      RAPID_REQUIRE_JOB_WORKER: "true"
       RAPID_ENABLE_SCHEDULER: ${RAPID_ENABLE_SCHEDULER:-true}
       USE_QDRANT: ${USE_QDRANT:-false}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}

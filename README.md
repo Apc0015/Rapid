@@ -161,7 +161,7 @@ Default admin credentials are in `data/users.yaml`.
 
 ## Production Deployment — Docker (Recommended)
 
-The full production stack (nginx + FastAPI + Ollama) is one command:
+The full production stack (nginx + FastAPI + durable job worker + Ollama) is one command:
 
 ### 1. Generate a strong JWT secret
 
@@ -185,6 +185,7 @@ docker-compose up -d
 This starts:
 - **nginx** on port `80` — serves the compiled React portal and proxies `/api/*` to the backend
 - **rapid** (internal) — FastAPI with 2 gunicorn workers
+- **worker** (internal) — durable indexing, connector sync, webhook, and RAG processing
 - **ollama** on port `11434` — local LLM inference (optional)
 
 ### 4. Pull an LLM model (if using Ollama)
@@ -198,6 +199,14 @@ docker exec rapid-ollama-1 ollama pull llama3.2
 Open `http://your-server-ip` in a browser. The nginx config routes:
 - `/*` → React application with history fallback
 - `/api/*` → FastAPI backend
+
+### 6. Verify the deployment
+
+```bash
+curl -fsS http://your-server-ip/api/health/ready
+```
+
+Production compose requires an active `worker` heartbeat. The response includes a `job_worker` check and the portal Settings page shows the active worker count. This prevents accepting uploads or connector syncs into a deployment with no durable processor.
 
 ---
 
@@ -213,6 +222,8 @@ Open `http://your-server-ip` in a browser. The nginx config routes:
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Local Ollama |
 | `OLLAMA_MODEL` | No | `llama3.2` | Ollama model to use |
 | `DATABASE_URL` | No | `sqlite:///data/db/rapid.db` | SQLite or PostgreSQL |
+| `RAPID_REQUIRE_JOB_WORKER` | No | `false` | Require a live durable worker in `/health/ready`; enabled by Docker production compose |
+| `RAPID_JOB_DB_PATH` | No | `data/db/jobs.db` | Durable queue and worker heartbeat database |
 | `ALLOWED_ORIGINS` | No | `http://localhost` | CORS allowed origins |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 

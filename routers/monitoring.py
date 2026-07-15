@@ -6,6 +6,7 @@ routers/monitoring.py — Observability endpoints.
   GET /health        — Public system health check
 """
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -93,7 +94,15 @@ async def readiness():
     checks = {}
     try:
         from infrastructure.job_queue import get_job_queue
-        checks["job_queue"] = {"status": "ready", "stats": get_job_queue().stats()}
+        queue = get_job_queue()
+        checks["job_queue"] = {"status": "ready", "stats": queue.stats()}
+        workers = queue.worker_status()
+        require_worker = os.getenv("RAPID_REQUIRE_JOB_WORKER", "false").lower() in {"1", "true", "yes"}
+        checks["job_worker"] = {
+            **workers,
+            "required": require_worker,
+            "status": "ready" if workers["active_count"] or not require_worker else "failed",
+        }
     except Exception as error:
         checks["job_queue"] = {"status": "failed", "error": str(error)}
     try:

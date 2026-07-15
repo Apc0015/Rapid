@@ -28,7 +28,11 @@ async def list_jobs(
 ):
     _require_admin(current_user)
     queue = get_job_queue()
-    return {"jobs": queue.list(_tenant(current_user), status, limit), "stats": queue.stats(_tenant(current_user))}
+    return {
+        "jobs": queue.list(_tenant(current_user), status, limit),
+        "stats": queue.stats(_tenant(current_user)),
+        "workers": queue.worker_status(),
+    }
 
 
 @router.get("/{job_id}")
