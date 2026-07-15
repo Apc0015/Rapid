@@ -1,21 +1,22 @@
-# RAPID — Departmental Intelligence OS
+# RAPID — Organization Operating System
 
-An enterprise-grade, privacy-first AI platform that gives every department its own intelligent agent — trained on your data, governed by your rules, and ready to act on your behalf.
+RAPID is a governed organization workspace: one React product portal for people, CRM, projects, operations, knowledge, and tenant administration, backed by configurable AI agents and organization data services.
 
 ---
 
 ## What RAPID Does
 
-RAPID connects your organization's documents, databases, and workflows to a team of AI agents that understand role-based access. A Finance analyst asking "What was our Q3 margin?" gets a different view than the CFO asking the same question — because RAPID enforces column-level governance rules before any data reaches the LLM.
+RAPID starts as a usable synthetic organization demo. An administrator can then connect organization data, model providers, SSO, and supported integrations from the admin portal. The portal keeps access, review, audit, and tenant configuration in the same product surface.
 
 **Key capabilities:**
 
-- **Multi-agent orchestration** — 10 specialized department agents (Finance, HR, Legal, Sales, IT, etc.) plus C-Suite agents for escalations
-- **Role-based intelligence** — column-level governance via `constitution.yaml`; raw data never reaches the LLM
-- **Pluggable LLM** — Anthropic, OpenAI, Azure, OpenRouter, Ollama (local), Google
-- **Human-in-the-loop** — 3-stage approval workflow before any consequential AI action
-- **Industry packs** — pre-configured templates for 8 verticals
-- **Full audit trail** — every query logged immutably for compliance
+- **Unified workspace** — overview, meetings, actions, people, CRM, projects, tickets, reports, library, notifications, search, and settings
+- **Ten governed department teams** — Finance, People Ops, Legal, Sales, Marketing, Operations, IT, Procurement, R&D, and Customer Success
+- **Project intelligence** — isolated project data spaces, scoped queries, skills, generated documents, portfolio analysis, and team membership
+- **Organization knowledge** — document upload, extraction/OCR, PII handling, source sync jobs, permissions, lexical/vector retrieval, and optional Qdrant
+- **Approval controls** — generated outputs are queued for review and cannot be downloaded until approved
+- **Tenant administration** — invitations, roles, organization structure, model/provider configuration, integrations, branding, and operations visibility
+- **Pluggable AI** — OpenRouter and Ollama are configuration-driven; other provider and connector paths are opt-in tenant integrations
 
 ---
 
@@ -33,77 +34,46 @@ The local synthetic organization is the default product demo and test dataset. C
 
 ```
 RAPID/
-├── main.py                    FastAPI app entry-point; registers all routers
-├── config.py                  Tunable parameters (thresholds, paths, model names)
-├── shared.py                  Agent singletons (imported by main + routers)
-├── constitution.yaml          Column-level governance rules (Allow/Anonymize/Block)
-│
 ├── frontend/                  React 19 + TypeScript product portal
-│   ├── src/                   Routes, pages, components, API client, and tests
-│   ├── package.json           Vite build, test, preview, and typecheck scripts
-│   ├── rapid-design.css       RAPID design tokens
-│   ├── product-shell.css      Shared product component styles
-│   └── Dockerfile             Builds the production React artifact for nginx
+│   ├── src/App.tsx            Product routing and authenticated shell
+│   ├── src/pages/             Workspace, admin, operations, and login pages
+│   ├── src/features/          Workspace, meeting, and intelligence flows
+│   ├── src/lib/api.ts         Browser API client and authenticated downloads
+│   └── Dockerfile             Builds the Vite production bundle for nginx
+├── nginx/nginx.conf           Serves the SPA and proxies /api/* to FastAPI
 │
-├── nginx/
-│   └── nginx.conf             Serves frontend, proxies /api/* → FastAPI
+├── main.py                    FastAPI application, lifespan, middleware, router registration
+├── routers/                   Product API boundaries
+│   ├── workspace.py           Common portal data: overview, meetings, records, notifications
+│   ├── projects.py            Project lifecycle and membership
+│   ├── project_query.py       Project-scoped intelligence
+│   ├── skills.py              Skill execution, reviewed outputs, project documents
+│   ├── actions.py             Human review queue and action decisions
+│   ├── organization_data.py   Sources, uploads, RAG status, document permissions
+│   ├── tenant_admin.py        Tenant configuration, invitations, entitlements, branding
+│   ├── organization_*.py      Structure, integrations, and organization operations
+│   ├── intelligence.py        Portal intelligence and evidence-aware answers
+│   └── jobs.py / monitoring.py Durable job visibility, metrics, liveness, readiness
 │
-├── routers/                   FastAPI route handlers (one file per concern)
-│   ├── deps.py                Auth dependencies (auth_user, require_role)
-│   ├── auth.py                /auth/login, /auth/register
-│   ├── admin.py               /admin/* — department and division management
-│   ├── users.py               /users/* — user management + approval workflow
-│   ├── documents.py           /ingest, /upload — document ingestion
-│   ├── database.py            /db/connect — database connections
-│   ├── llm.py                 /llm/configure, /llm/models, /llm/status
-│   ├── monitoring.py          /audit, /agents/stats, /health
-│   ├── chat_sessions.py       /sessions/* — chat history persistence
-│   ├── projects.py            /projects/* — project management
-│   ├── project_query.py       /projects/{id}/query — project-scoped intelligence
-│   ├── actions.py             /actions/* — human-in-the-loop approval queue
-│   ├── packs.py               /packs/* — industry pack management
-│   ├── backup.py              /backup/* — backup and restore
-│   ├── cloud_onedrive.py      /cloud/onedrive/* — OneDrive OAuth + import
-│   └── cloud_gmail.py         /cloud/gmail/* — Gmail OAuth + import
+├── infrastructure/            Product services and storage adapters
+│   ├── query_service.py       Main governed query pipeline
+│   ├── organization_rag.py    Permission-aware organization retrieval
+│   ├── document_extractor.py  Text extraction, OCR, PII handling
+│   ├── embedding_service.py   Configurable embedding provider
+│   ├── job_queue.py           Durable queue, retries, dead letters, worker heartbeats
+│   ├── job_handlers.py        Indexing, sync, webhook, and connector job handlers
+│   ├── organization_data_store.py Source/document metadata and access scopes
+│   ├── integration_hub.py     Configured provider and connector registry
+│   └── tenant_admin_store.py  Tenant configuration and entitlement state
 │
-├── agents/                    Multi-agent orchestration layer
-│   ├── system/                Orchestration agents
-│   │   ├── spokesperson.py    Intent classification + final answer composition
-│   │   ├── master_planner.py  Query decomposition + bidding + dispatch
-│   │   └── fusion_agent.py    Merge dept results + confidence scoring
-│   └── departments/           10 specialized dept agents
-│
-├── infrastructure/            Core integrations
-│   ├── llm_client.py          Multi-provider LLM client
-│   ├── db_master.py           SQL execution + governance firewall
-│   ├── doc_master.py          Document management + RAG indexing
-│   ├── user_registry.py       User auth, roles, dept/division assignment
-│   └── chat_history.py        SQLite-backed session store
-│
-├── pipelines/
-│   ├── rag_pipeline.py        Chunk → embed → hybrid search (vector + BM25)
-│   └── db_pipeline.py         SQL generation → execution → governance filter
-│
-├── industry_packs/            8 pre-configured industry templates
-├── departments/               Per-department configs
-├── governance/                Org governance rules
-├── models/                    Internal data objects
-├── tests/                     Test suite
-│
-├── data/                      Runtime data (git-ignored)
-│   ├── users.yaml             User accounts + bcrypt-hashed passwords
-│   ├── db/rapid.db            SQLite — users, chat sessions, messages
-│   ├── faiss/                 FAISS vector index
-│   ├── chroma/                ChromaDB embeddings
-│   ├── documents/             Ingested documents
-│   └── backups/               Automated backups
-│
-├── Dockerfile                 Production image (gunicorn + uvicorn workers)
-├── docker-compose.yml         Full stack: nginx + rapid + ollama
-├── .env.example               Environment variable template
-├── requirements.txt           Python dependencies
-├── Makefile                   Developer shortcuts
-└── pytest.ini                 Test configuration
+├── agents/                    Department agents, project intelligence, skills, and governance
+├── workers/job_worker.py      Separate durable background worker process
+├── data/                      Git-ignored runtime state: SQLite, queued jobs, documents, indexes, logs
+├── tests/                     Python regression and integration coverage
+├── scripts/                   Portal E2E and load-smoke validation
+├── docker-compose.yml         nginx + API + worker + Ollama; optional Qdrant profile
+├── .env.example               Configuration template for local or customer deployment
+└── README.md                  Product, deployment, and architecture guide
 ```
 
 ---
@@ -265,10 +235,10 @@ make dirs          # Create required runtime directories
 
 ## Privacy & Governance
 
-- **RAW DATA NEVER REACHES THE LLM** — documents and DB rows are converted to plain-English summaries before the LLM sees them
-- **Column-level rules** in `constitution.yaml` — ALLOW / ANONYMIZE / BLOCK per role and department
-- **Audit trail** — every query logged immutably to `data/audit.log`
-- **Human-in-the-loop** — 3-stage approval (dept → division → admin) before any AI action executes
+- **Tenant and project scoping** — tenant identity and project membership gate project queries, skills, and generated outputs
+- **Data controls** — classification, PII handling, source permissions, and governance filters are applied in the organization data/RAG path
+- **Audit trail** — operational events and agent activity are recorded for review
+- **Human-in-the-loop** — generated skill outputs are queued for reviewer approval before download or distribution
 - **bcrypt passwords** — no plaintext credentials anywhere in the codebase
 - **JWT hard-fail** — docker-compose refuses to start without `JWT_SECRET_KEY`
 
@@ -277,32 +247,25 @@ make dirs          # Create required runtime directories
 ## Architecture
 
 ```
-Browser → nginx (:80)
-            │
-            ├── /* → React/Vite build   (TypeScript SPA)
-            └── /api/* → rapid (:8000)  (FastAPI)
-                              │
-                    Intent Classification
-                              │
-                    ┌─────────┴──────────┐
-                    │  MasterPlanner      │
-                    │  (decompose + bid)  │
-                    └─────────┬──────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-          HR Agent      Finance Agent    Legal Agent  …
-          RAG + DB       RAG + DB        RAG + DB
-              │               │               │
-              └───────────────┼───────────────┘
-                              ▼
-                        FusionAgent
-                    (merge + confidence)
-                              │
-                        Spokesperson
-                    (compose final answer)
-                              │
-                        AuditLogger
+Browser
+  │
+  ▼
+nginx (:80)
+  ├── React product portal (Vite build)
+  │     workspace · admin · operations · project intelligence
+  │
+  └── /api/* → FastAPI product API (:8000)
+        ├── Workspace API: meetings, CRM, reports, search, notifications
+        ├── Tenant/Admin API: users, configuration, organization structure, integrations
+        ├── Project API: scoped queries, skills, approvals, generated documents
+        └── Governed data and intelligence services
+              query service · department agents · RAG · search
+              extraction/OCR · PII rules · permissions
+                   ├── SQLite + files: tenant/project metadata and documents
+                   ├── FAISS or Qdrant: vector retrieval and embeddings
+                   ├── OpenRouter/Ollama: configured tenant model providers
+                   └── Durable job queue + worker
+                         indexing · source sync · webhooks · retry/dead letter
 ```
 
 ---
@@ -315,7 +278,7 @@ make test
 pytest tests/ -v --tb=short
 ```
 
-Tests cover: JWT auth, SQL governance, RAG pipeline, escalation logic, intent classification.
+The suite covers authentication, tenant isolation, workspace flows, project/RAG behavior, governance, durable jobs, configuration, and security middleware. The CI workflow also builds the React portal, runs browser E2E coverage, and performs a load smoke test.
 
 ---
 
