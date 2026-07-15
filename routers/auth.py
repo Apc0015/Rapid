@@ -98,6 +98,7 @@ async def login(request: Request, body: LoginRequest):
         user_id=body.user_id,
         role=role,
         permitted_departments=permitted_depts,
+        extra={"tenant_id": user.get("tenant_id", "default")},
     )
     refresh_token = jwt.create_refresh_token(user_id=body.user_id)
 
@@ -147,6 +148,7 @@ async def refresh_token(body: RefreshRequest):
         user_id=user_id,
         role=user.get("role", "employee"),
         permitted_departments=user.get("permitted_departments", []),
+        extra={"tenant_id": user.get("tenant_id", "default")},
     )
     return {
         "access_token":       access_token,

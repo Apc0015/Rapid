@@ -26,6 +26,20 @@ def _require_uploader(current_user: dict):
     return current_user
 
 
+def _bind_tenant(current_user: dict) -> None:
+    """Bind document ingestion to the authenticated tenant before index access."""
+    from infrastructure.db_master import set_current_tenant
+    set_current_tenant(str(current_user.get("tenant_id") or "default"))
+
+
+def _require_department_access(current_user: dict, dept_tag: str) -> None:
+    """Legacy RAG uploads must honor the same department boundary as new sources."""
+    if current_user.get("role") in {"admin", "ceo"}:
+        return
+    if dept_tag not in set(current_user.get("depts") or []):
+        raise HTTPException(status_code=403, detail="You do not have access to this department")
+
+
 # ── Ingest by file path ───────────────────────────────────────────────────────
 
 class IngestRequest(BaseModel):
@@ -43,6 +57,8 @@ class IngestResponse(BaseModel):
 async def ingest(req: IngestRequest, current_user: dict = Depends(get_current_user)):
     """Ingest a document by server-side path. Admin/manager only."""
     _require_uploader(current_user)
+    _bind_tenant(current_user)
+    _require_department_access(current_user, req.dept_tag)
     from infrastructure.doc_master import get_doc_master
     doc = get_doc_master()
     chunks = await doc.ingest_document(req.file_path, req.dept_tag)
@@ -59,6 +75,8 @@ async def upload_document(
 ):
     """Accept a multipart file upload, save it, and ingest into RAG. Admin/manager only."""
     _require_uploader(current_user)
+    _bind_tenant(current_user)
+    _require_department_access(current_user, dept_tag)
 
     _, ext = os.path.splitext(file.filename or "")
     if ext.lower() not in _ALLOWED_EXTENSIONS:

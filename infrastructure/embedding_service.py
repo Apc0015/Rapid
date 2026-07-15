@@ -64,6 +64,8 @@ class EmbeddingService:
     def __init__(self):
         self._ollama_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
         self._openai_key  = os.getenv("OPENAI_API_KEY", "")
+        self._openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self._openrouter_base = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         # Strip /v1 to get the raw Ollama base for /api/embeddings endpoint
         self._ollama_raw  = self._ollama_base.replace("/v1", "")
 
@@ -71,6 +73,8 @@ class EmbeddingService:
         """Re-read env vars (called after runtime LLM reconfiguration)."""
         self._ollama_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
         self._openai_key  = os.getenv("OPENAI_API_KEY", "")
+        self._openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self._openrouter_base = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self._ollama_raw  = self._ollama_base.replace("/v1", "")
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -80,29 +84,92 @@ class EmbeddingService:
         Embed a single string. Returns a float list.
         model: override the default embedding model (per-dept config passes this).
         """
+        embedding, _ = await self.embed_with_metadata(text, model=model)
+        return embedding
+
+    async def embed_with_metadata(self, text: str, model: Optional[str] = None) -> tuple[List[float], str]:
+        """Return an embedding and the backend label used to produce it."""
         target_model = model or _DEFAULT_OLLAMA_EMBED_MODEL
 
         # Try Ollama first (always available offline)
         try:
-            return await self._ollama_embed(text, target_model)
+            return await self._ollama_embed(text, target_model), "ollama"
         except Exception as e:
             logger.warning(f"Ollama embed failed (model={target_model}): {e}")
+
+        if self._openrouter_key:
+            try:
+                openrouter_model = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+                return await self._openrouter_embed(text, openrouter_model), "openrouter"
+            except Exception as e:
+                logger.error(f"OpenRouter embed fallback failed: {e}")
 
         # Online fallback — OpenAI
         if self._openai_key:
             try:
-                return await self._openai_embed(text)
+                return await self._openai_embed(text), "openai"
             except Exception as e:
                 logger.error(f"OpenAI embed fallback also failed: {e}")
 
-        # Last resort — deterministic hash (dev only, not semantic)
-        logger.error("All embedding backends failed — using hash placeholder (NOT semantic)")
-        return _hash_embed(text, dim=_DIMS.get(target_model, _DEFAULT_DIM))
+        if os.getenv("RAPID_ENV", "development") == "production":
+            raise RuntimeError("No production embedding provider is available")
+        logger.warning("All embedding backends failed — using local token-hash retrieval for development")
+        return _hash_embed(text, dim=_DIMS.get(target_model, _DEFAULT_DIM)), "local_token_hash"
 
     async def embed_batch(self, texts: List[str], model: Optional[str] = None) -> List[List[float]]:
         """Embed a list of texts concurrently."""
-        tasks = [self.embed(t, model=model) for t in texts]
-        return await asyncio.gather(*tasks)
+        embeddings, _ = await self.embed_batch_with_metadata(texts, model=model)
+        return embeddings
+
+    async def embed_batch_with_metadata(self, texts: List[str], model: Optional[str] = None) -> tuple[List[List[float]], str]:
+        if not texts:
+            return [], "none"
+        target_model = model or _DEFAULT_OLLAMA_EMBED_MODEL
+        first, backend = await self.embed_with_metadata(texts[0], model=target_model)
+        if len(texts) == 1:
+            return [first], backend
+        if backend == "ollama":
+            remaining = await asyncio.gather(*(self._ollama_embed(text, target_model) for text in texts[1:]))
+        elif backend == "openrouter":
+            openrouter_model = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+            remaining = await asyncio.gather(*(self._openrouter_embed(text, openrouter_model) for text in texts[1:]))
+        elif backend == "openai":
+            remaining = await asyncio.gather(*(self._openai_embed(text) for text in texts[1:]))
+        else:
+            dim = len(first)
+            remaining = [_hash_embed(text, dim=dim) for text in texts[1:]]
+        return [first, *remaining], backend
+
+    async def embed_for_tenant(self, text: str, tenant_id: str, model: Optional[str] = None) -> tuple[List[float], str]:
+        embeddings, backend = await self.embed_batch_for_tenant([text], tenant_id, model=model)
+        return embeddings[0], backend
+
+    async def embed_batch_for_tenant(self, texts: List[str], tenant_id: str, model: Optional[str] = None) -> tuple[List[List[float]], str]:
+        """Use the model provider selected in the tenant admin portal."""
+        if not texts:
+            return [], "none"
+        from infrastructure.secret_vault import get_secret_vault
+        from infrastructure.tenant_admin_store import get_tenant_admin_store
+
+        runtime = get_tenant_admin_store().active_model_runtime(tenant_id)
+        provider = runtime["provider"]
+        try:
+            if provider == "ollama":
+                target_model = model or os.getenv("OLLAMA_EMBEDDING_MODEL", _DEFAULT_OLLAMA_EMBED_MODEL)
+                tasks = [self._ollama_embed_at(text, target_model, runtime["endpoint"]) for text in texts]
+                return await asyncio.gather(*tasks), "tenant_ollama"
+            if provider == "openrouter":
+                key = get_secret_vault().resolve(runtime["credential_ref"], tenant_id)
+                target_model = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+                tasks = [self._openrouter_embed_at(text, target_model, runtime["endpoint"], key) for text in texts]
+                return await asyncio.gather(*tasks), "tenant_openrouter"
+            raise RuntimeError(f"Unsupported tenant embedding provider: {provider}")
+        except Exception:
+            if os.getenv("RAPID_ENV", "development") == "production":
+                raise
+            dim = _DIMS.get(model or _DEFAULT_OLLAMA_EMBED_MODEL, _DEFAULT_DIM)
+            logger.warning("Tenant embedding provider unavailable — using local token-hash retrieval for development")
+            return [_hash_embed(text, dim=dim) for text in texts], "local_token_hash"
 
     def dim_for_model(self, model: Optional[str] = None) -> int:
         """Return the embedding dimension for the given model."""
@@ -116,12 +183,16 @@ class EmbeddingService:
         Call Ollama /api/embeddings (native endpoint, not OpenAI-compatible).
         More reliable than /v1/embeddings for embedding-only models.
         """
+        return await self._ollama_embed_at(text, model, self._ollama_raw)
+
+    async def _ollama_embed_at(self, text: str, model: str, endpoint: str) -> List[float]:
+        raw_endpoint = endpoint.rstrip("/").removesuffix("/v1")
         async with _embed_semaphore():
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self._ollama_raw}/api/embeddings",
+                    f"{raw_endpoint}/api/embeddings",
                     json={"model": model, "prompt": text},
-                    timeout=aiohttp.ClientTimeout(total=60),
+                    timeout=aiohttp.ClientTimeout(total=max(2, int(os.getenv("RAPID_EMBEDDING_TIMEOUT_SECONDS", "10")))),
                 ) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
@@ -146,16 +217,45 @@ class EmbeddingService:
                 data = await resp.json()
                 return data["data"][0]["embedding"]
 
+    async def _openrouter_embed(self, text: str, model: str) -> List[float]:
+        return await self._openrouter_embed_at(text, model, self._openrouter_base, self._openrouter_key)
+
+    async def _openrouter_embed_at(self, text: str, model: str, endpoint: str, api_key: str) -> List[float]:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("RAPID_PUBLIC_URL", "https://rapid.local"),
+            "X-Title": "RAPID Organization OS",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{endpoint.rstrip('/')}/embeddings",
+                headers=headers,
+                json={"input": text, "model": model},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data["data"][0]["embedding"]
+
 
 # ── Hash fallback (non-semantic, dev only) ─────────────────────────────────────
 
 def _hash_embed(text: str, dim: int = 768) -> List[float]:
+    """Deterministic token hashing for useful local lexical similarity in development."""
     import hashlib
-    h = hashlib.sha256(text.encode()).digest()
-    raw = list(h) * (dim // len(h) + 1)
-    raw = raw[:dim]
-    total = sum(raw) or 1
-    return [v / total for v in raw]
+    import math
+    import re
+
+    vector = [0.0] * dim
+    tokens = re.findall(r"[a-zA-Z0-9_/-]+", text.lower())
+    for token in tokens:
+        digest = hashlib.blake2b(token.encode(), digest_size=8).digest()
+        slot = int.from_bytes(digest[:4], "big") % dim
+        sign = 1.0 if digest[4] % 2 == 0 else -1.0
+        vector[slot] += sign
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
 
 
 # ── Singleton ──────────────────────────────────────────────────────────────────

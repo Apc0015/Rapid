@@ -26,6 +26,9 @@ rank-bm25>=0.2.2
 # ── Document parsing ──────────────────────────────────────────────────────────
 pypdf>=4.2.0
 python-docx>=1.1.0
+Pillow>=10.3.0
+pytesseract>=0.3.13
+pdf2image>=1.17.0
 
 # ── Phase 3: Qdrant (optional — enable with USE_QDRANT=true) ─────────────────
 qdrant-client>=1.9.0

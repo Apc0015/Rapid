@@ -40,6 +40,8 @@ Thumbs.db
 .code-review-graph/
 .agent.md
 node_modules/
+frontend/dist/
+*.tsbuildinfo
 
 # Test artefacts
 tests/

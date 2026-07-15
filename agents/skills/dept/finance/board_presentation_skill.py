@@ -23,15 +23,14 @@ from datetime import datetime
 from typing import Any
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
+from pptx.util import Inches
 
 from agents.skills.base_skill import BaseSkill, SkillOutput
 from infrastructure.project_context import ProjectContext
 # Re-use helper functions from presentation_skill
 from agents.skills.universal.presentation_skill import (
     _add_slide, _text_box, _add_divider, _add_table,
-    DARK_BLUE, ACCENT, WHITE, LIGHT_GREY, GREEN, RED, AMBER,
+    DARK_BLUE, WHITE, LIGHT_GREY,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,7 +96,6 @@ class BoardPresentationSkill(BaseSkill):
             total_remain = total_alloc - total_spent
             budget_pct  = (total_spent / total_alloc * 100) if total_alloc else 0
 
-            from pptx.dml.color import RGBColor as _RGB
             from pptx.util import Inches as _I
 
             # ── Slide 1: Cover ─────────────────────────────────────────────
@@ -108,7 +106,6 @@ class BoardPresentationSkill(BaseSkill):
             _text_box(slide, 0.5, 3.2, 12, 0.6, "Board Financial Presentation", 22, False, WHITE, 2)
             _text_box(slide, 0.5, 4.0, 12, 0.5, f"{now}  |  Health: {health}", 14, False, LIGHT_GREY, 2)
 
-            from pptx.enum.text import PP_ALIGN
             # ── Slide 2: Financial Highlights ──────────────────────────────
             slide = _add_slide(prs)
             _text_box(slide, 0.4, 0.2, 12, 0.6, "Financial Highlights", 28, True, DARK_BLUE)

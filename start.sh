@@ -9,6 +9,7 @@ cd "$(dirname "$0")"
 
 PYTHON=python3
 PORT=8000
+WEB_PORT=4173
 VENV=".venv"
 
 echo ""
@@ -28,6 +29,12 @@ if ! command -v $PYTHON &>/dev/null; then
 fi
 echo "✓ Python: $($PYTHON --version)"
 
+if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+  echo "✗ Node.js and npm are required for the React portal"
+  exit 1
+fi
+echo "✓ Node: $(node --version)"
+
 # ── 2. Create virtualenv if missing ──────────────────────────────────────────
 if [ ! -d "$VENV" ]; then
   echo "→ Creating virtual environment..."
@@ -42,6 +49,10 @@ echo "→ Installing dependencies..."
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 echo "✓ Dependencies ready"
+
+echo "→ Installing React dependencies..."
+npm ci --prefix frontend --silent
+echo "✓ React dependencies ready"
 
 # ── 5. Create runtime directories ────────────────────────────────────────────
 mkdir -p data/db data/faiss data/chroma data/documents data/backups logs
@@ -67,15 +78,18 @@ if lsof -ti :$PORT &>/dev/null; then
   sleep 1
 fi
 
+if lsof -ti :$WEB_PORT &>/dev/null; then
+  echo "→ Stopping existing process on port $WEB_PORT..."
+  lsof -ti :$WEB_PORT | xargs kill -9 2>/dev/null || true
+  sleep 1
+fi
+
 # ── 8. Start the server ───────────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Starting RAPID backend on http://localhost:$PORT"
 echo "  API docs: http://localhost:$PORT/docs"
-echo ""
-echo "  Frontend: open frontend/index.html in your browser"
-echo "  OR run:   cd frontend && python3 -m http.server 3000"
-echo "  Then:     open http://localhost:3000"
+echo "  React portal: http://localhost:$WEB_PORT/login"
 echo ""
 echo "  Login credentials:"
 echo "    ayush  / Admin@1234  (Admin)"
@@ -88,7 +102,12 @@ echo ""
 
 # Open browser after short delay (macOS)
 if command -v open &>/dev/null; then
-  (sleep 3 && open "frontend/index.html") &
+  (sleep 3 && open "http://localhost:$WEB_PORT/login") &
 fi
+
+mkdir -p logs
+npm run dev --prefix frontend > logs/frontend.log 2>&1 &
+FRONTEND_PID=$!
+trap 'kill "$FRONTEND_PID" 2>/dev/null || true' EXIT INT TERM
 
 uvicorn main:app --host 0.0.0.0 --port $PORT --reload --log-level info

@@ -11,8 +11,6 @@ import base64
 import os
 import secrets
 from datetime import datetime, timezone
-from email import message_from_bytes
-from typing import Optional
 
 import httpx
 

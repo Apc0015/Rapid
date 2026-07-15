@@ -58,6 +58,27 @@ def _get_project_row(project_id: str) -> dict:
     return dict(row)
 
 
+def _require_project_access(proj_row: dict, current_user: dict) -> None:
+    """Enforce tenant and project membership before exposing project outputs."""
+    tenant_id = str(current_user.get("tenant_id") or "default")
+    if proj_row["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if current_user.get("role") in {"admin", "ceo"}:
+        return
+
+    conn = sqlite3.connect(config.DB_PATH, timeout=10)
+    try:
+        membership = conn.execute(
+            """SELECT 1 FROM project_members
+               WHERE project_id=? AND tenant_id=? AND user_id=? AND status='active'""",
+            (proj_row["project_id"], tenant_id, current_user["sub"]),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this project")
+
+
 def _build_context(proj_row: dict) -> ProjectContext:
     """Build a minimal ProjectContext from a project registry row."""
     ctx = ProjectContext(
@@ -107,6 +128,7 @@ async def list_available_skills(
 ):
     """List all skills available for this project's department (universal + dept-specific)."""
     proj_row = _get_project_row(project_id)
+    _require_project_access(proj_row, current_user)
     dept_id  = proj_row.get("dept_id") or "all"
 
     from agents.skills.skill_registry import get_skill_registry
@@ -129,6 +151,7 @@ async def detect_skill(
 ):
     """Auto-detect which skill best matches a query for this project's department."""
     proj_row = _get_project_row(project_id)
+    _require_project_access(proj_row, current_user)
     dept_id  = proj_row.get("dept_id") or "all"
 
     from agents.skills.skill_registry import get_skill_registry
@@ -169,6 +192,7 @@ async def execute_skill(
     awaiting human review before the file is considered approved.
     """
     proj_row  = _get_project_row(project_id)
+    _require_project_access(proj_row, current_user)
     context   = _build_context(proj_row)
 
     from agents.skills.skill_registry import get_skill_registry
@@ -228,6 +252,7 @@ async def download_skill_output(
 ):
     """Download a generated skill output file."""
     proj_row = _get_project_row(project_id)
+    _require_project_access(proj_row, current_user)
     tenant_id = proj_row["tenant_id"]
 
     # Validate filename (no path traversal)
@@ -239,6 +264,16 @@ async def download_skill_output(
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File '{filename}' not found")
+
+    # Outputs that were submitted for review cannot be distributed until a
+    # reviewer approves the corresponding action. Legacy outputs without an
+    # action retain their existing project access behavior.
+    from infrastructure.action_queue import ActionStatus, get_action_queue
+    queue = get_action_queue(proj_row["db_path"], project_id, tenant_id)
+    reviewed_actions = queue.list_all(status=None, limit=500)
+    matching = [action for action in reviewed_actions if os.path.basename(action.output_file_path or "") == filename]
+    if matching and not any(action.status == ActionStatus.APPROVED for action in matching):
+        raise HTTPException(status_code=409, detail="This generated output is pending human approval")
 
     # Determine media type
     ext_map = {
@@ -269,6 +304,7 @@ async def list_project_documents(
     Reads from project_documents table + filesystem scan.
     """
     proj_row  = _get_project_row(project_id)
+    _require_project_access(proj_row, current_user)
     db_path   = proj_row.get("db_path") or ""
     tenant_id = proj_row["tenant_id"]
 
@@ -313,6 +349,21 @@ async def list_project_documents(
                     "created_at":   _dt.utcfromtimestamp(os.path.getmtime(fp)).isoformat(),
                     "download_url": f"/projects/{project_id}/skills/download/{filename}",
                 })
+
+    # Keep review-gated documents visible as records, but do not advertise a
+    # download URL until the matching approval action is approved.
+    from infrastructure.action_queue import ActionStatus, get_action_queue
+    queue = get_action_queue(proj_row["db_path"], project_id, tenant_id)
+    reviewed_actions = queue.list_all(status=None, limit=500)
+    gated_statuses = {
+        os.path.basename(action.output_file_path or ""): action.status
+        for action in reviewed_actions
+        if action.output_file_path
+    }
+    for document in documents:
+        filename = os.path.basename(str(document.get("file_path") or ""))
+        if filename and filename in gated_statuses and gated_statuses[filename] != ActionStatus.APPROVED:
+            document.pop("download_url", None)
 
     return {
         "project_id": project_id,

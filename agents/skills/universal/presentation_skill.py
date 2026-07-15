@@ -78,7 +78,6 @@ def _text_box(slide, left, top, width, height, text, font_size=18,
 
 
 def _fill_shape(shape, color: RGBColor):
-    from pptx.util import Pt
     fill = shape.fill
     fill.solid()
     fill.fore_color.rgb = color
@@ -286,7 +285,7 @@ class PresentationSkill(BaseSkill):
 
 def _add_divider(slide, top: float = 0.85):
     """Thin horizontal line under the slide title."""
-    from pptx.util import Inches, Pt, Emu
+    from pptx.util import Inches
     line = slide.shapes.add_shape(1, Inches(0.4), Inches(top), Inches(12.5), Inches(0.02))
     line.fill.solid()
     line.fill.fore_color.rgb = ACCENT

@@ -74,3 +74,18 @@ DOCKER_COMPOSE_TESTING.md
 
 # ── Node (if any frontend build tools are added) ─────────────────────────────
 node_modules/
+*.tsbuildinfo
+
+# internal working documents — never publish
+AUDITOR_PROMPT.md
+DESIGN.md
+PRD_RAPID_V3.md
+fable-project-audit-prompt.md
+audit/
+
+# internal working documents — never publish
+AUDITOR_PROMPT.md
+DESIGN.md
+PRD_RAPID_V3.md
+fable-project-audit-prompt.md
+audit/

@@ -23,6 +23,8 @@ from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -42,6 +44,7 @@ from agents.system.audit_logger import get_audit
 from agents.system.governance_filter import get_governance
 from routers.deps import get_current_user
 from infrastructure.jwt_manager import get_jwt_manager
+from infrastructure.query_service import QueryRequest, QueryResponse, run_query
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 from routers.auth           import router as auth_router
@@ -86,6 +89,15 @@ from routers.it               import router as it_router
 from routers.finance          import router as finance_router
 from routers.marketing        import router as marketing_router
 from orgos.api                import org_router
+from routers.people_ops       import router as people_ops_router
+from routers.organization     import router as organization_router
+from routers.organization_data import router as organization_data_router
+from routers.organization_integrations import router as organization_integrations_router
+from routers.organization_structure import router as organization_structure_router
+from routers.workspace import router as workspace_router
+from routers.tenant_admin import router as tenant_admin_router
+from routers.jobs import router as jobs_router
+from routers.intelligence import router as intelligence_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -141,10 +153,12 @@ def _get_cors_origins() -> list[str]:
         "http://localhost:3001",
         "http://localhost:8080",
         "http://localhost:5500",   # VS Code Live Server
+        "http://localhost:4173",   # RAPID static product preview
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:5500",
+        "http://127.0.0.1:4173",
     ]
 
 
@@ -224,6 +238,34 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_cleanup_loop())
     memory_cleanup_task = asyncio.create_task(_memory_cleanup_loop())
 
+    # Schedule execution is opt-in because production deployments should assign
+    # exactly one worker replica this responsibility.
+    scheduler_task = None
+    if os.getenv("RAPID_ENABLE_SCHEDULER", "false").lower() in {"1", "true", "yes"}:
+        interval_seconds = max(30, int(os.getenv("RAPID_SCHEDULER_INTERVAL_SECONDS", "60")))
+
+        async def _automation_scheduler_loop():
+            from infrastructure.integration_hub import get_integration_hub
+            while True:
+                try:
+                    results = get_integration_hub().dispatch_due_schedules()
+                    if results:
+                        logger.info("Organization scheduler dispatched %s run(s)", len(results))
+                except Exception as e:
+                    logger.warning(f"Organization scheduler failed: {e}")
+                await asyncio.sleep(interval_seconds)
+
+        scheduler_task = asyncio.create_task(_automation_scheduler_loop())
+        logger.info("Organization scheduler started (interval=%ss)", interval_seconds)
+
+    from infrastructure.job_handlers import register_default_job_handlers
+    register_default_job_handlers()
+    job_worker_task = None
+    if os.getenv("RAPID_ENABLE_JOB_WORKER", "false").lower() in {"1", "true", "yes"}:
+        from infrastructure.job_queue import run_worker
+        job_worker_task = asyncio.create_task(run_worker(poll_seconds=float(os.getenv("RAPID_JOB_POLL_SECONDS", "1"))))
+        logger.info("Durable job worker started")
+
     # Phase 5: Start background project monitor
     try:
         from infrastructure.monitoring_loop import get_background_monitor
@@ -256,20 +298,27 @@ async def lifespan(app: FastAPI):
 
     if _monitor_task:
         _monitor_task.cancel()
+    if scheduler_task:
+        scheduler_task.cancel()
+    if job_worker_task:
+        job_worker_task.cancel()
     logger.info("RAPID shutting down")
 
 
 # ── Application ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="RAPID",
-    description="RAG Application for Private Instant Deployment",
-    version="2.0.0",
+    title="RAPID Organization OS",
+    description="Governed autonomous workflows for organization-wide operations",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 # Rate limiting
 app.state.limiter = limiter
+
+from infrastructure.security_middleware import RapidSecurityMiddleware
+app.add_middleware(RapidSecurityMiddleware)
 
 
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -293,9 +342,14 @@ app.add_middleware(
     allow_origins=_get_cors_origins(),
     allow_origin_regex=_get_cors_origin_regex(),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key", "X-Rapid-Signature", "X-Rapid-Timestamp"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+if os.getenv("RAPID_ENV", "development") == "production":
+    allowed_hosts = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+    if allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # Register routers
 app.include_router(auth_router)
@@ -331,6 +385,15 @@ app.include_router(packs_router)
 # Phase 9: Dynamic Agent Management
 app.include_router(custom_agents_router)
 app.include_router(nl_agent_creator_router)
+app.include_router(people_ops_router)
+app.include_router(organization_router)
+app.include_router(organization_data_router)
+app.include_router(organization_integrations_router)
+app.include_router(organization_structure_router)
+app.include_router(workspace_router)
+app.include_router(tenant_admin_router)
+app.include_router(jobs_router)
+app.include_router(intelligence_router)
 
 # Digital Organization — HR, IT, Finance, Marketing (built departments)
 app.include_router(hr_router)
@@ -356,35 +419,6 @@ if _frontend_dir.is_dir():
     app.mount("/app", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
 
 
-# ── Request / Response models ─────────────────────────────────────────────────
-
-class ChatMessage(BaseModel):
-    role:    str
-    content: str
-
-
-class QueryRequest(BaseModel):
-    query:              str
-    history:            list[ChatMessage] = []
-    attached_file_b64:  Optional[str] = None
-    attached_file_name: Optional[str] = None
-    use_web:            bool = False
-    session_id:         Optional[str] = None
-    # LLM provider is set org-wide by the admin via PUT /tenants/{id}/llm.
-    # Users do not pick providers — the org's configured provider is used automatically.
-
-
-class QueryResponse(BaseModel):
-    query_id:     str
-    answer:       str
-    confidence:   float
-    warning:      Optional[str] = None
-    sources:      list[str] = []
-    dept_tags:    list[str] = []
-    action_taken: str
-    provider_used: Optional[str] = None   # which LLM provider the org has configured
-
-
 # ── Main query endpoint ───────────────────────────────────────────────────────
 
 @app.post("/query", response_model=QueryResponse)
@@ -406,224 +440,12 @@ async def query(
 
     try:
         return await asyncio.wait_for(
-            _run_query(req, current_user, background_tasks),
+            run_query(req, current_user, background_tasks),
             timeout=120.0,
         )
     except asyncio.TimeoutError:
         logger.error(f"Query timed out for user={current_user['sub']}: '{req.query[:60]}'")
         raise HTTPException(status_code=504, detail="Query timed out — try a simpler question")
-
-
-async def _run_query(
-    req:              QueryRequest,
-    current_user:     dict,
-    background_tasks: BackgroundTasks,
-) -> QueryResponse:
-    query_id = str(uuid.uuid4())
-    audit    = get_audit()
-    user_id  = current_user["sub"]
-
-    # ── 0. Activate the org's configured LLM provider ────────────────────────
-    # Resolves the tenant's provider (set by admin via PUT /tenants/{id}/llm)
-    # and stores it in a ContextVar so every downstream get_llm() call —
-    # in Spokesperson, MasterPlanner, FusionAgent, RAG pipeline, DB pipeline —
-    # automatically uses it without any parameter changes in those files.
-    from infrastructure.llm_adapter import get_llm_for_tenant
-    from infrastructure.llm_client import set_active_llm
-    from infrastructure.tenant_manager import DEFAULT_TENANT_ID
-    from infrastructure.db_master import set_current_tenant
-
-    # tenant_id comes from the JWT when multi-tenancy is enabled;
-    # defaults to "default" for single-org deployments.
-    tenant_id = current_user.get("tenant_id", DEFAULT_TENANT_ID)
-
-    # Bind tenant context for DB routing (ContextVar — isolated per async task).
-    # Every downstream db_master call will automatically route to this tenant's
-    # SQLite file without any parameter plumbing.
-    set_current_tenant(tenant_id)
-
-    _tenant_llm = await get_llm_for_tenant(tenant_id)
-    set_active_llm(_tenant_llm)
-
-    # Capture which provider is actually in use for the response & audit log
-    _provider_name = getattr(_tenant_llm, "provider_id", "auto")
-
-    query_event = {
-        "query_id":  query_id,
-        "user_id":   user_id,
-        "raw_query": req.query,
-        "timestamp": datetime.utcnow().isoformat(),
-        "provider":  _provider_name,
-    }
-
-    # ── 1. Load permissions from JWT payload ──────────────────────────────────
-    # Permissions supplemented from the DB-backed user store
-    from infrastructure.user_registry import load_users as _load_users
-    users       = _load_users()
-    user_record = users.get(user_id, {})
-
-    user_permissions = spokesperson.load_permissions(
-        user_id,
-        current_user.get("role", "employee"),
-        user_record=user_record,
-    )
-    query_event["intent_class"] = "AUTH_OK"
-
-    # ── 2. Build history context ──────────────────────────────────────────────
-    history_context = ""
-    if req.history:
-        recent = req.history[-6:]
-        history_context = "\n".join(f"{m.role.upper()}: {m.content}" for m in recent)
-
-    # ── 3. Extract attached file ──────────────────────────────────────────────
-    attached_file_context = ""
-    if req.attached_file_b64 and req.attached_file_name:
-        try:
-            import base64, tempfile
-            from infrastructure.doc_master import get_doc_master
-            file_bytes = base64.b64decode(req.attached_file_b64)
-            suffix = os.path.splitext(req.attached_file_name)[1].lower()
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
-            try:
-                doc = get_doc_master()
-                attached_file_context = doc._load_text(Path(tmp_path))
-                if len(attached_file_context) > 8000:
-                    attached_file_context = attached_file_context[:8000] + "\n\n[… document truncated …]"
-            finally:
-                os.unlink(tmp_path)
-        except Exception as e:
-            logger.warning(f"[{query_id[:8]}] Failed to extract attached file: {e}")
-            attached_file_context = f"[Could not read attached file: {e}]"
-
-    # ── 4. Classify intent ────────────────────────────────────────────────────
-    # Build a minimal user_profile dict for spokesperson compatibility
-    user_profile = {
-        "role": current_user.get("role", "employee"),
-        "permitted_departments": current_user.get("depts", []),
-    }
-    intent_result = await spokesperson.classify_intent(req.query, user_profile, history_context)
-    intent = intent_result.get("intent")
-    query_event["intent_class"] = intent
-    logger.info(f"[{query_id[:8]}] user={user_id} intent={intent} query='{req.query[:60]}'")
-
-    # ── 5. Direct-answer helper ───────────────────────────────────────────────
-    async def _direct_answer(result, action_label: str) -> QueryResponse:
-        query_event.update({
-            "depts_activated":      [],
-            "agents_selected":      [],
-            "composite_confidence": result.confidence,
-            "action_taken":         action_label,
-        })
-        audit.log_query(query_event)
-        resp = QueryResponse(
-            query_id=query_id,
-            answer=result.summary,
-            confidence=result.confidence,
-            action_taken=action_label,
-            sources=list(set(result.citations)) if result.citations else [],
-            provider_used=_provider_name,
-        )
-        if req.session_id:
-            _save_to_history(req.session_id, req.query, resp.answer, background_tasks)
-        return resp
-
-    if intent == INTENT_TRIVIAL:
-        return await _direct_answer(
-            await spokesperson.handle_trivial(req.query, history_context), "trivial_direct"
-        )
-    if intent == INTENT_GENERAL:
-        llm_result = await spokesperson.handle_general(req.query, history_context, attached_file_context)
-        if req.use_web:
-            try:
-                web_result = await web_agent.run(req.query, llm_result.summary)
-                if web_result.confidence > 0.1 and web_result.summary:
-                    llm_result.summary    += "\n\n" + web_result.summary
-                    llm_result.citations   = web_result.citations
-                    llm_result.confidence  = max(llm_result.confidence, web_result.confidence)
-            except Exception as e:
-                logger.warning(f"Web augmentation failed: {e}")
-        return await _direct_answer(llm_result, "general_llm_web" if req.use_web else "general_llm")
-
-    if intent == INTENT_AMBIGUOUS:
-        return await _direct_answer(
-            await spokesperson.clarify(req.query), "clarification"
-        )
-
-    # ── 6. Orchestrate → hierarchy-aware dispatch + escalation ────────────────
-    dept_results, gaps = await orchestrator.handle(
-        query_id, req.query, user_permissions, intent or ""
-    )
-
-    if not dept_results:
-        return await _direct_answer(
-            await spokesperson.handle_general(req.query, history_context, attached_file_context),
-            "general_llm_no_bid",
-        )
-
-    if gaps:
-        for gap_query in gaps:
-            background_tasks.add_task(
-                supervisor.flag_gap,
-                {"query": gap_query, "user_id": user_id, "query_id": query_id},
-            )
-
-    query_event["depts_activated"] = [r.dept_tag for r in dept_results]
-    query_event["agents_selected"] = list({r.dept_tag for r in dept_results})
-
-    # ── 7. Fusion ─────────────────────────────────────────────────────────────
-    decision = await fusion.run(dept_results)
-
-    # ── 8. Web augmentation / LLM fallback ───────────────────────────────────
-    action = decision["action"]
-    if req.use_web:
-        try:
-            web_result = await web_agent.run(req.query, decision.get("answer", ""))
-            if web_result.summary and web_result.confidence > 0.1:
-                decision["answer"] += "\n\n**Web sources:**\n" + web_result.summary
-            action = "returned_with_web"
-        except Exception as e:
-            logger.warning(f"Web agent failed: {e}")
-    elif action == "fallback":
-        result = await spokesperson.handle_general(req.query, history_context, attached_file_context)
-        decision["answer"]     = result.summary
-        decision["confidence"] = result.confidence
-        action = "general_llm_fallback"
-
-    # ── 9. Audit + agent rating + gap detection ───────────────────────────────
-    query_event.update({
-        "composite_confidence": decision["confidence"],
-        "action_taken":         action,
-    })
-    audit.log_query(query_event)
-    for result in dept_results:
-        background_tasks.add_task(supervisor.rate_agent, result.dept_tag, query_id, result, req.query)
-
-    # If this query was a gap (no dept handled it), run detect_gaps in background.
-    # detect_gaps reads the audit log, finds patterns with 3+ occurrences, and
-    # auto-forwards confirmed gaps to AgentRepresentative for admin review.
-    if action == "gap_flagged" or not dept_results:
-        recent_log = audit.query_audit_trail(limit=200)
-        background_tasks.add_task(supervisor.detect_gaps, recent_log)
-
-    # ── 10. Response ──────────────────────────────────────────────────────────
-    all_citations = [c for r in dept_results for c in r.citations]
-    response = QueryResponse(
-        query_id=query_id,
-        answer=decision["answer"],
-        confidence=decision["confidence"],
-        warning=decision.get("warning"),
-        sources=list(set(all_citations)),
-        dept_tags=list({r.dept_tag for r in dept_results}),
-        action_taken=action,
-        provider_used=_provider_name,
-    )
-    if req.session_id:
-        _save_to_history(req.session_id, req.query, response.answer, background_tasks)
-    return response
-
-
 # ── Lean grounded Q&A (Ask RAPID) ─────────────────────────────────────────────
 # The full /query pipeline fans out to the whole multi-agent org — dozens of
 # LLM calls, built for cloud providers. /ask is the lean complement the console
@@ -651,7 +473,9 @@ async def ask(
 
     # Departments this user may search: from the JWT depts claim; privileged
     # roles (and users with no dept restriction) search everything indexed.
-    faiss_root = Path("data/faiss")
+    # Indexes are tenant-scoped on disk: data/faiss/{tenant}/{dept}.
+    tenant_id = current_user.get("tenant_id", "default")
+    faiss_root = Path("data/faiss") / tenant_id
     indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
     role  = current_user.get("role", "employee")
     depts = current_user.get("depts") or []
@@ -674,7 +498,7 @@ async def ask(
         model = cfg_all.get_rag(d).get("embedding_model", "nomic-embed-text")
         if model not in emb_cache:
             emb_cache[model] = await embedder.embed(req.query, model=model)
-        idx = get_dept_index(d, dim=embedder.dim_for_model(model))
+        idx = get_dept_index(d, dim=embedder.dim_for_model(model), tenant_id=tenant_id)
         if idx.doc_count == 0:
             continue
         hits = await idx.vector_search(emb_cache[model], top_k=1)
@@ -712,12 +536,3 @@ async def ask(
         provider_used=getattr(get_llm(), "provider_id", "auto"),
     )
 
-
-# ── History helper ────────────────────────────────────────────────────────────
-
-def _save_to_history(session_id, user_query, answer, background_tasks):
-    from infrastructure.chat_history import ChatHistory
-    ch = ChatHistory()
-    background_tasks.add_task(ch.append_message, session_id, "user",      user_query)
-    background_tasks.add_task(ch.append_message, session_id, "assistant", answer)
-    background_tasks.add_task(ch.auto_title,     session_id, user_query)
