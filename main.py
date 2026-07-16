@@ -402,21 +402,25 @@ app.include_router(finance_router)
 app.include_router(marketing_router)
 app.include_router(org_router)
 
-# ── Frontend (served so the console is reachable at one URL) ───────────────────
-from pathlib import Path as _Path
-from fastapi.staticfiles import StaticFiles
+# ── Product portal handoff ────────────────────────────────────────────────────
 from fastapi.responses import RedirectResponse
 
-_frontend_dir = _Path(__file__).parent / "frontend"
+
+def _portal_url() -> str:
+    """Return the React portal origin for local development or deployment."""
+    default = "/" if os.getenv("RAPID_ENV", "development") == "production" else "http://127.0.0.1:4173"
+    return os.getenv("RAPID_PORTAL_URL", default).rstrip("/")
 
 
 @app.get("/", include_in_schema=False)
 async def _root():
-    return RedirectResponse(url="/app/hr.html")
+    return RedirectResponse(url=f"{_portal_url()}/login")
 
 
-if _frontend_dir.is_dir():
-    app.mount("/app", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
+@app.get("/app/{legacy_path:path}", include_in_schema=False)
+async def _legacy_product_redirect(legacy_path: str):
+    """Retire the original static department consoles in favor of one portal."""
+    return RedirectResponse(url=f"{_portal_url()}/workspace/overview")
 
 
 # ── Main query endpoint ───────────────────────────────────────────────────────
@@ -537,4 +541,3 @@ async def ask(
         action_taken="ask_rag",
         provider_used=getattr(get_llm(), "provider_id", "auto"),
     )
-
