@@ -104,6 +104,17 @@ def _require_action_reviewer(current_user: dict) -> None:
         raise HTTPException(status_code=403, detail="Reviewer role required to decide an action")
 
 
+def _require_action_department(current_user: dict, action) -> None:
+    """Managers may decide work only in their assigned department(s)."""
+    if current_user.get("role") in {"admin", "ceo"}:
+        return
+    department = getattr(action, "agent_dept", None)
+    if department is None and hasattr(action, "to_dict"):
+        department = action.to_dict().get("agent_dept")
+    if department not in set(current_user.get("depts") or []):
+        raise HTTPException(status_code=403, detail="You cannot decide an action outside your department scope")
+
+
 # ── Request / Response models ─────────────────────────────────────────────────
 
 class ApproveRequest(BaseModel):
@@ -233,6 +244,7 @@ async def approve_action(
             aq = get_action_queue(proj["db_path"], proj["project_id"], proj["tenant_id"])
             action = aq.get(action_id)
             if action:
+                _require_action_department(current_user, action)
                 updated = aq.approve(action_id, reviewed_by=user_id)
                 if not updated:
                     raise HTTPException(
@@ -273,6 +285,7 @@ async def reject_action(
             aq = get_action_queue(proj["db_path"], proj["project_id"], proj["tenant_id"])
             action = aq.get(action_id)
             if action:
+                _require_action_department(current_user, action)
                 updated = aq.reject(action_id, reviewed_by=user_id, reason=req.reason)
                 if not updated:
                     raise HTTPException(

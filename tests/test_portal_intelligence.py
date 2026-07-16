@@ -128,6 +128,39 @@ def test_portal_intelligence_does_not_pass_restricted_knowledge_to_an_employee(t
     assert "Restricted compensation" not in captured["question"]
 
 
+def test_portal_intelligence_honors_source_allow_lists(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAPID_WORKSPACE_DB_PATH", str(tmp_path / "workspace.db"))
+    monkeypatch.setenv("RAPID_ORGANIZATION_DATA_DB_PATH", str(tmp_path / "organization.db"))
+    store = OrganizationDataStore(str(tmp_path / "organization.db"))
+    source = store.register_source(
+        "acme", "hr", "Leadership plans", "unstructured", "manual", "internal", "admin",
+        {"allowed_user_ids": ["leadership-reader"]},
+    )
+    store.add_document("acme", source["id"], "Leadership succession", "The succession plan names the next leadership cohort.")
+    captured: dict[str, str] = {}
+
+    class Result:
+        query_id = "query-1"
+        answer = "A permitted answer."
+        confidence = 0.8
+        warning = None
+        dept_tags = ["hr"]
+        action_taken = "returned"
+        provider_used = "ollama"
+
+    async def execute(question, *_args, **_kwargs):
+        captured["question"] = question
+        return Result()
+
+    monkeypatch.setattr(PortalIntelligenceService, "_run_original_engine", staticmethod(execute))
+    response = _client({"sub": "employee", "role": "employee", "tenant_id": "acme", "depts": ["hr"]}).post(
+        "/intelligence/ask", json={"question": "What is the succession plan?", "department": "hr"}
+    )
+
+    assert response.status_code == 200
+    assert "Leadership succession" not in captured["question"]
+
+
 @pytest.mark.asyncio
 async def test_gateway_dispatches_project_questions_through_the_shared_contract(monkeypatch):
     gateway = get_intelligence_gateway()
@@ -186,7 +219,7 @@ async def test_gateway_returns_evidence_when_organization_analysis_exceeds_laten
     )
 
     assert response.mode == "scoped_evidence_fallback"
-    assert "live-query budget" in (response.warning or "")
+    assert "verified workspace evidence" in (response.warning or "")
 
 
 @pytest.mark.asyncio
@@ -209,6 +242,12 @@ async def test_gateway_returns_a_page_specific_operating_brief_without_invoking_
         BackgroundTasks(),
         legacy_executor=should_not_run,
     )
+    startup = await gateway.ask(
+        IntelligenceRequest(question="Give me the startup operating picture", workspace_view="overview"),
+        {"sub": "ceo", "role": "ceo", "tenant_id": "acme", "depts": []},
+        BackgroundTasks(),
+        legacy_executor=should_not_run,
+    )
 
     assert overview.mode == "workspace_brief"
     assert overview.scope == "workspace:overview"
@@ -217,6 +256,8 @@ async def test_gateway_returns_a_page_specific_operating_brief_without_invoking_
     assert actions.mode == "workspace_brief"
     assert actions.scope == "workspace:actions"
     assert "open commitments" in actions.answer
+    assert startup.mode == "workspace_brief"
+    assert "Northstar Labs" in startup.answer
 
 
 @pytest.mark.asyncio

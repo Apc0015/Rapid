@@ -27,6 +27,15 @@ def _get_tenant(current_user: dict) -> str:
     return current_user.get("tenant_id") or current_user.get("sub", "default")
 
 
+def _project_scope_sql(current_user: dict, tenant_id: str, alias: str = "") -> tuple[str, list[str]]:
+    if current_user.get("role") in {"admin", "ceo"}:
+        return "", [tenant_id]
+    return (
+        f" AND {alias}project_id IN (SELECT project_id FROM project_members WHERE tenant_id=? AND user_id=? AND status='active')",
+        [tenant_id, current_user["sub"]],
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -93,6 +102,9 @@ async def search_suggest(
         from infrastructure.people_directory import get_people_directory
         directory = get_people_directory()
         people = directory.search(tenant_id=tenant_id, query=q, limit=5)
+        if current_user.get("role") not in {"admin", "ceo"}:
+            allowed = set(current_user.get("depts") or [])
+            people = [person for person in people if not person.dept_id or person.dept_id in allowed]
         for p in people:
             suggestions.append({
                 "type":  "person",
@@ -107,10 +119,11 @@ async def search_suggest(
     try:
         conn = sqlite3.connect(config.DB_PATH, timeout=5)
         conn.row_factory = sqlite3.Row
+        scope_sql, scope_params = _project_scope_sql(current_user, tenant_id)
         rows = conn.execute(
             "SELECT project_id, name FROM project_registry "
-            "WHERE tenant_id=? AND name LIKE ? AND status='active' LIMIT ?",
-            (tenant_id, pat, limit - len(suggestions)),
+            f"WHERE tenant_id=? AND name LIKE ? AND status='active'{scope_sql} LIMIT ?",
+            (tenant_id, pat, *scope_params[1:], limit - len(suggestions)),
         ).fetchall()
         conn.close()
         for r in rows:
@@ -149,6 +162,7 @@ async def recent_searches(
     conn.row_factory = sqlite3.Row
     try:
         # Use project names as recent activity (JOIN projects for name/updated_at)
+        scope_sql, scope_params = _project_scope_sql(current_user, tenant_id, "pr.")
         rows = conn.execute(
             """
             SELECT COALESCE(p.name, pr.project_id) AS name,
@@ -157,9 +171,10 @@ async def recent_searches(
             FROM project_registry pr
             LEFT JOIN projects p ON pr.project_id = p.project_id
             WHERE pr.tenant_id=? AND pr.status != 'archived'
+            """ + scope_sql + """
             ORDER BY updated_at DESC LIMIT ?
             """,
-            (tenant_id, limit),
+            (tenant_id, *scope_params[1:], limit),
         ).fetchall()
         for r in rows:
             activity.append({

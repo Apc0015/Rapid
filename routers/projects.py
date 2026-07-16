@@ -28,6 +28,7 @@ import config
 from routers.deps import get_current_user
 from infrastructure.tenant_manager import get_tenant_manager, DEFAULT_TENANT_ID
 from infrastructure.project_provisioner import get_project_provisioner
+from infrastructure.people_ops_store import DEPARTMENTS
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = logging.getLogger("rapid.projects")
@@ -79,7 +80,7 @@ def _get_tenant_id(current_user: dict) -> str:
     return current_user.get("tenant_id", DEFAULT_TENANT_ID)
 
 
-def _check_project_access(project_id: str, tenant_id: str, user_id: str) -> dict:
+def _check_project_access(project_id: str, tenant_id: str, user_id: str, user_role: str = "employee") -> dict:
     """
     Verify the user has access to the project.
     Returns the member record if access is granted.
@@ -95,8 +96,8 @@ def _check_project_access(project_id: str, tenant_id: str, user_id: str) -> dict
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # Admin bypasses membership check
-        # Check membership
+        # Tenant administrators can operate across the company. Other users
+        # must be explicit active project members.
         member = conn.execute(
             """
             SELECT * FROM project_members
@@ -105,6 +106,8 @@ def _check_project_access(project_id: str, tenant_id: str, user_id: str) -> dict
             (project_id, tenant_id, user_id),
         ).fetchone()
 
+        if user_role in {"admin", "ceo"}:
+            return dict(member) if member else {"user_id": user_id, "role": "owner", "access_level": "full"}
         if not member:
             raise HTTPException(
                 status_code=403,
@@ -170,6 +173,9 @@ async def create_project(
     """
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
+    allowed_departments = set(DEPARTMENTS) if current_user.get("role") in {"admin", "ceo"} else set(current_user.get("depts") or [])
+    if req.dept_id not in allowed_departments:
+        raise HTTPException(status_code=403, detail="You cannot create a project outside your department scope")
     project_id = str(uuid.uuid4())
 
     provisioner = get_project_provisioner()
@@ -231,7 +237,7 @@ async def list_projects(
     conn = _get_platform_conn()
     try:
         # Build query — admins see all projects, others see only their memberships
-        if role == "admin":
+        if role in {"admin", "ceo"}:
             base_sql = """
                 SELECT p.*, pm.role as member_role, pm.access_level
                 FROM projects p
@@ -278,7 +284,7 @@ async def get_project(
     user_id   = current_user["sub"]
 
     # Access check (raises 403/404 if not authorized)
-    member_info = _check_project_access(project_id, tenant_id, user_id)
+    member_info = _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
 
     conn = _get_platform_conn()
     try:
@@ -321,8 +327,8 @@ async def update_project(
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
 
-    member = _check_project_access(project_id, tenant_id, user_id)
-    if member["role"] not in ("owner", "manager") and current_user.get("role") != "admin":
+    member = _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
+    if member["role"] not in ("owner", "manager") and current_user.get("role") not in {"admin", "ceo"}:
         raise HTTPException(status_code=403, detail="Only project owners and managers can update a project")
 
     updates = {}
@@ -364,8 +370,8 @@ async def archive_project(
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
 
-    member = _check_project_access(project_id, tenant_id, user_id)
-    if member["role"] != "owner" and current_user.get("role") != "admin":
+    member = _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
+    if member["role"] != "owner" and current_user.get("role") not in {"admin", "ceo"}:
         raise HTTPException(status_code=403, detail="Only project owners can archive a project")
 
     conn = _get_platform_conn()
@@ -396,9 +402,13 @@ async def add_member(
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
 
-    member = _check_project_access(project_id, tenant_id, user_id)
-    if member["role"] not in ("owner", "manager") and current_user.get("role") != "admin":
+    member = _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
+    if member["role"] not in ("owner", "manager") and current_user.get("role") not in {"admin", "ceo"}:
         raise HTTPException(status_code=403, detail="Only owners and managers can add members")
+    if req.dept_id not in (set(DEPARTMENTS) if current_user.get("role") in {"admin", "ceo"} else set(current_user.get("depts") or [])):
+        raise HTTPException(status_code=403, detail="You cannot assign a project member outside your department scope")
+    if member["role"] != "owner" and current_user.get("role") not in {"admin", "ceo"} and (req.role in {"owner", "manager"} or req.access_level in {"full", "manager"}):
+        raise HTTPException(status_code=403, detail="Only a project owner can grant management or owner access")
 
     conn = _get_platform_conn()
     try:
@@ -441,12 +451,20 @@ async def remove_member(
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
 
-    member = _check_project_access(project_id, tenant_id, user_id)
-    if member["role"] not in ("owner", "manager") and current_user.get("role") != "admin":
+    member = _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
+    if member["role"] not in ("owner", "manager") and current_user.get("role") not in {"admin", "ceo"}:
         raise HTTPException(status_code=403, detail="Only owners and managers can remove members")
 
     conn = _get_platform_conn()
     try:
+        target = conn.execute(
+            "SELECT role FROM project_members WHERE project_id=? AND tenant_id=? AND user_id=? AND status='active'",
+            (project_id, tenant_id, target_user_id),
+        ).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Project member not found")
+        if member["role"] == "manager" and current_user.get("role") not in {"admin", "ceo"} and target["role"] in {"owner", "manager"}:
+            raise HTTPException(status_code=403, detail="A project manager cannot remove an owner or another manager")
         conn.execute(
             """
             UPDATE project_members SET status = 'inactive'
@@ -474,7 +492,7 @@ async def get_project_status(
     tenant_id = _get_tenant_id(current_user)
     user_id   = current_user["sub"]
 
-    _check_project_access(project_id, tenant_id, user_id)
+    _check_project_access(project_id, tenant_id, user_id, current_user.get("role", "employee"))
 
     # Touch last accessed
     get_project_provisioner().touch_last_accessed(project_id, tenant_id)

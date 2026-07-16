@@ -175,7 +175,11 @@ async def portal_users(current_user: dict = Depends(get_current_user)):
     """Leadership roles: list portal users for scoped team assignment."""
     if current_user.get("role") not in ("admin", "ceo", "c_suite", "manager", "dept_head", "division_head"):
         raise HTTPException(status_code=403, detail="A leadership role is required")
-    return {"users": list_portal_users()}
+    users = [user for user in list_portal_users() if str(user.get("tenant_id") or "default") == str(current_user.get("tenant_id") or "default")]
+    if current_user.get("role") not in {"admin", "ceo"}:
+        allowed = set(current_user.get("depts") or [])
+        users = [user for user in users if allowed.intersection(user.get("permitted_departments") or [])]
+    return {"users": users}
 
 
 @router.get("/users/requests")

@@ -127,6 +127,12 @@ export function WorkspacePage() {
     navigateRouter('/login', { replace: true });
   }
 
+  function openRapidChat(prompt: string, context: WorkspaceView) {
+    navigateRouter(`/workspace/chat?prompt=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}`);
+    setNavigationOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   if (loading && !data) return <main className="product-page boot-state"><div className="boot-brand"><span>R</span><strong>RAPID</strong></div><LoadingState /></main>;
   if (error && !data) return <main className="product-page boot-state"><div className="portal-error"><strong>RAPID could not load this workspace.</strong><p id="portal-error-message">{error}</p><button id="retry-load" className="product-button secondary" type="button" onClick={() => void load()}>Retry</button></div></main>;
   if (!data) return null;
@@ -149,7 +155,7 @@ export function WorkspacePage() {
 
   return (
     <>
-      <WorkspaceShell overview={data.overview} view={view} notificationCount={unread} features={data.features} navigationOpen={navigationOpen} onNavigate={navigate} onNavigationOpen={setNavigationOpen} onReset={() => void resetDemo()} onPrimaryAction={primaryAction} onSignOut={signOut}>
+      <WorkspaceShell overview={data.overview} view={view} notificationCount={unread} features={data.features} navigationOpen={navigationOpen} onNavigate={navigate} onNavigationOpen={setNavigationOpen} onReset={() => void resetDemo()} onPrimaryAction={primaryAction} onOpenChat={openRapidChat} onSignOut={signOut}>
         <ViewComponent {...viewProps} />
       </WorkspaceShell>
       <MeetingDialogs selectedMeeting={selectedMeeting} meetingOpen={meetingOpen} newMeetingOpen={newMeetingOpen} onMeetingClose={() => setMeetingOpen(false)} onNewMeetingClose={() => setNewMeetingOpen(false)} onSaveMeeting={saveMeeting} onCreateMeeting={createMeeting} onCreateAction={createAction} onChangeAction={changeAction} />

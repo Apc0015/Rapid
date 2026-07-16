@@ -1,6 +1,8 @@
 import pytest
 
 from infrastructure.embedding_service import EmbeddingService
+from infrastructure.llm_adapter import TenantLLMAdapter
+from infrastructure.llm_registry import get_provider
 from infrastructure.tenant_admin_store import TenantAdminError, TenantAdminStore
 
 
@@ -12,6 +14,8 @@ def test_admin_configuration_defaults_to_ollama_and_sandbox(tmp_path):
     sandbox = next(connection for connection in configuration["connections"] if connection["connection_key"] == "knowledge_storage")
     assert ollama["enabled"] is True
     assert sandbox["status"] == "sandbox_ready"
+    assert configuration["trust_summary"]["connections"]["status"] == "sandbox"
+    assert configuration["trust_summary"]["boundary"]["status"] == "controlled"
 
 
 def test_feature_manifest_is_tenant_scoped_and_exposes_no_configuration_secrets(tmp_path):
@@ -83,3 +87,23 @@ async def test_embeddings_use_the_tenant_admin_ollama_endpoint(tmp_path, monkeyp
     assert backend == "tenant_ollama"
     assert embeddings == [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
     assert calls[0][2] == "http://localhost:11434"
+
+
+def test_tenant_llm_adapter_resolves_credential_reference(monkeypatch):
+    import infrastructure.secret_vault as secret_vault
+
+    class Vault:
+        def resolve(self, reference, tenant_id):
+            assert reference == "vault://provider-key"
+            assert tenant_id == "acme"
+            return "resolved-key"
+
+    monkeypatch.setattr(secret_vault, "get_secret_vault", lambda: Vault())
+    provider = get_provider("openrouter")
+    adapter = TenantLLMAdapter(
+        tenant_id="acme", provider_id="openrouter", model_id="openai/gpt-4.1-mini",
+        cfg={"base_url": "https://openrouter.ai/api/v1", "credential_ref": "vault://provider-key"},
+        api_style=provider.api_style,
+    )
+
+    assert adapter._api_key == "resolved-key"

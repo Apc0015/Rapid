@@ -42,11 +42,42 @@ class InvitationRequest(BaseModel):
     name: str
     role: str = "employee"
     departments: list[str] = []
+class OperatingProfileRequest(BaseModel):
+    profile_key: str
+    deployment_mode: str
+    departments: list[str] | None = None
+    features: list[str] | None = None
 
 @router.get("/configuration")
 async def configuration(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
     return get_tenant_admin_store().configuration(_tenant(current_user))
+
+
+@router.get("/trust-summary")
+async def trust_summary(current_user: dict = Depends(get_current_user)):
+    """Expose the active data and approval controls without exposing secrets."""
+    _require_admin(current_user)
+    return {"trust_summary": get_tenant_admin_store().trust_summary(_tenant(current_user))}
+
+
+@router.get("/operating-profile")
+async def operating_profile(current_user: dict = Depends(get_current_user)):
+    _require_admin(current_user)
+    return {"operating_profile": get_tenant_admin_store().operating_profile(_tenant(current_user))}
+
+
+@router.put("/operating-profile")
+async def update_operating_profile(body: OperatingProfileRequest, current_user: dict = Depends(get_current_user)):
+    _require_admin(current_user)
+    try:
+        return {"operating_profile": get_tenant_admin_store().apply_operating_profile(
+            _tenant(current_user), profile_key=body.profile_key,
+            deployment_mode=body.deployment_mode,
+            departments=body.departments, features=body.features,
+        )}
+    except TenantAdminError as error:
+        _raise(error)
 
 
 @router.get("/features")

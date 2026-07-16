@@ -12,6 +12,7 @@ from fastapi import BackgroundTasks
 from pydantic import BaseModel, Field
 
 from infrastructure.demo_workspace import WorkspaceError, get_demo_workspace_store
+from infrastructure.organization_data_store import get_organization_data_store
 from infrastructure.organization_rag import get_organization_rag
 from infrastructure.people_ops_store import DEPARTMENTS
 
@@ -153,7 +154,7 @@ class IntelligenceGateway:
             return self._workspace_brief(tenant_id, request.workspace_view or "overview")
         departments = [request.department] if request.department else sorted(allowed)
         evidence = await self._collect_organization_evidence(
-            tenant_id, request.question, departments, self.allowed_classifications(current_user)
+            tenant_id, request.question, departments, self.allowed_classifications(current_user), current_user=current_user,
         )
         prompt = self._build_evidence_prompt(request.question, request.workspace_view, departments, evidence)
         try:
@@ -183,7 +184,7 @@ class IntelligenceGateway:
                 evidence,
                 request.department,
                 "organization",
-                warning="The AI analysis exceeded the live-query budget. RAPID returned approved records instead.",
+                warning="RAPID could not complete a live analysis in time, so it is showing the verified workspace evidence available now.",
             )
         except Exception as error:
             logger.warning("Organization intelligence fell back to scoped evidence: %s", error)
@@ -199,7 +200,8 @@ class IntelligenceGateway:
         normalized = " ".join(re.findall(r"[a-z0-9]+", request.question.lower()))
         phrases = (
             "tell me about", "organization overview", "company overview", "give me an overview",
-            "summarize this", "what needs attention", "what should i focus", "what is happening",
+            "startup overview", "startup operating picture", "operating picture", "summarize this",
+            "what needs attention", "what should i focus", "what is happening",
         )
         return normalized in {"organization", "company", "overview", "summary"} or any(phrase in normalized for phrase in phrases)
 
@@ -309,7 +311,8 @@ class IntelligenceGateway:
         if context.dept_id not in allowed:
             raise PermissionError("You do not have access to this project department")
         evidence = await self._collect_organization_evidence(
-            tenant_id, request.question, [context.dept_id], self.allowed_classifications(current_user), limit=3
+            tenant_id, request.question, [context.dept_id], self.allowed_classifications(current_user),
+            limit=3, current_user=current_user,
         )
         history = self._build_evidence_prompt("", None, [context.dept_id], evidence)
         result = await get_project_coordinator().run(
@@ -349,6 +352,7 @@ class IntelligenceGateway:
         classifications: set[str],
         *,
         limit: int = 8,
+        current_user: dict[str, Any] | None = None,
     ) -> list[IntelligenceEvidence]:
         evidence: list[IntelligenceEvidence] = []
         try:
@@ -367,8 +371,10 @@ class IntelligenceGateway:
 
         for department in departments[:3]:
             try:
+                allowed_source_ids = self._allowed_rag_source_ids(tenant_id, department, current_user, classifications)
                 result = await get_organization_rag().search(
-                    tenant_id, department, question, limit=3, allowed_classifications=classifications
+                    tenant_id, department, question, limit=3, allowed_classifications=classifications,
+                    allowed_source_ids=allowed_source_ids,
                 )
                 for citation in result["citations"]:
                     evidence.append(IntelligenceEvidence(
@@ -381,6 +387,22 @@ class IntelligenceGateway:
             except Exception as error:
                 logger.info("No governed knowledge evidence for %s: %s", department, error)
         return evidence[:limit]
+
+    @staticmethod
+    def _allowed_rag_source_ids(
+        tenant_id: str, department: str, current_user: dict[str, Any] | None, classifications: set[str]
+    ) -> set[str] | None:
+        """Keep source allow-lists in force when chat collects RAG evidence."""
+        if current_user is None:
+            return None
+        store = get_organization_data_store()
+        user_id = str(current_user.get("sub") or "")
+        role = str(current_user.get("role") or "employee")
+        return {
+            source["id"]
+            for source in store.list_sources(tenant_id, department)
+            if source["classification"] in classifications and store.source_allows(source, user_id, role)
+        }
 
     @staticmethod
     def _compact(data: dict[str, Any]) -> str:
@@ -442,7 +464,7 @@ class IntelligenceGateway:
         warning: Optional[str] = None,
     ) -> IntelligenceResponse:
         if evidence:
-            lead = "The live AI analysis did not complete in time. These approved records are most relevant:\n\n" if warning else "AI runtime is unavailable. These approved records are most relevant:\n\n"
+            lead = "Here is the verified workspace evidence available now:\n\n" if warning else "The AI runtime is unavailable, so RAPID is showing the verified workspace evidence available now:\n\n"
             answer = lead
             answer += "\n".join(f"{item.title}: {item.excerpt}" for item in evidence[:4])
             fallback_warning = warning or "Configure Ollama or OpenRouter for an agent-generated answer."
@@ -471,6 +493,7 @@ class IntelligenceGateway:
             get_audit().log_query({
                 "query_id": response.id,
                 "user_id": current_user["sub"],
+                "tenant_id": str(current_user.get("tenant_id") or "default"),
                 "raw_query": question,
                 "intent_class": response.mode,
                 "depts_activated": response.departments,

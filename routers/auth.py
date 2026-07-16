@@ -8,6 +8,7 @@ routers/auth.py — Authentication endpoints.
   POST /auth/logout-all — Revoke all devices
 """
 
+import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
@@ -23,7 +24,7 @@ from infrastructure.user_registry import (
 )
 from infrastructure.jwt_manager import get_jwt_manager
 from shared import spokesperson
-from .deps import get_current_user, auth_user_password
+from .deps import get_current_user, auth_user_password, user_capabilities
 
 router = APIRouter(tags=["auth"])
 
@@ -42,6 +43,8 @@ class RegisterRequest(BaseModel):
 @router.post("/auth/register")
 async def register(body: RegisterRequest):
     """Any employee can self-register using their org email and a password."""
+    if os.getenv("RAPID_ENV", "development") == "production" and os.getenv("RAPID_ALLOW_LEGACY_REGISTRATION", "false").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=404, detail="Not found")
     try:
         req = register_user(
             employee_name   = body.employee_name,
@@ -200,7 +203,11 @@ async def logout_all(current_user: dict = Depends(get_current_user)):
 @router.get("/users/my-access")
 async def my_access(current_user: dict = Depends(get_current_user)):
     """User views their own access profile."""
-    return get_user_access(current_user["sub"])
+    access = get_user_access(current_user["sub"])
+    access["capabilities"] = user_capabilities(current_user)
+    access["permitted_departments"] = current_user.get("depts") or []
+    access["role"] = current_user.get("role", "employee")
+    return access
 
 
 class DbModeRequest(BaseModel):

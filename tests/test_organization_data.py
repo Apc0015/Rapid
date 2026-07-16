@@ -98,6 +98,33 @@ def test_document_list_enforces_classification_and_exposes_index_status(tmp_path
     assert visible[0]["classification"] == "confidential"
 
 
+def test_source_allow_lists_are_enforced_for_documents_and_retrieval(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAPID_ORGANIZATION_DATA_DB_PATH", str(tmp_path / "organization_data.db"))
+    monkeypatch.setenv("RAPID_JOB_DB_PATH", str(tmp_path / "jobs.db"))
+    app = FastAPI()
+    app.include_router(router)
+    principal = {"sub": "finance-manager", "role": "manager", "tenant_id": "acme", "depts": ["finance"]}
+    app.dependency_overrides[get_current_user] = lambda: principal
+    client = TestClient(app)
+
+    source = client.post("/organization/data/sources", json={
+        "department": "finance", "name": "Board close", "source_type": "unstructured",
+        "config": {"allowed_roles": ["manager"], "allowed_user_ids": ["board-reader"]},
+    }).json()["source"]
+    document = client.post(f"/organization/data/sources/{source['id']}/documents", json={
+        "name": "Board plan", "content": "The board close plan contains margin targets.",
+    }).json()["document"]
+
+    principal.update({"sub": "employee", "role": "employee", "depts": ["finance"]})
+    assert client.get("/organization/data/sources").json()["sources"] == []
+    assert client.get("/organization/data/documents").json()["documents"] == []
+    assert client.get(f"/organization/data/documents/{document['document_id']}").status_code == 403
+    assert client.post("/organization/data/search", json={"department": "finance", "query": "margin targets"}).json()["count"] == 0
+
+    principal.update({"sub": "board-reader", "role": "employee"})
+    assert client.post("/organization/data/search", json={"department": "finance", "query": "margin targets"}).json()["count"] == 1
+
+
 def test_legacy_document_ingestion_checks_department_membership():
     from fastapi import HTTPException
     from routers.documents import _require_department_access

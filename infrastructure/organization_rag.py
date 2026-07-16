@@ -35,8 +35,11 @@ class OrganizationRagService:
         return {"document_id": document_id, "chunks_indexed": len(chunks), "embedding_model": model, "embedding_backend": backend}
 
     async def search(self, tenant_id: str, department: str, query: str, source_id: str | None = None,
-                     limit: int = 8, allowed_classifications: set[str] | None = None) -> dict[str, Any]:
-        lexical = self.store.search(tenant_id, department, query, source_id, max(limit * 2, limit))
+                     limit: int = 8, allowed_classifications: set[str] | None = None,
+                     allowed_source_ids: set[str] | None = None) -> dict[str, Any]:
+        lexical = self.store.search(
+            tenant_id, department, query, source_id, max(limit * 2, limit), allowed_source_ids,
+        )
         allowed = allowed_classifications or {"internal", "confidential", "restricted"}
         lexical_by_id = {item["chunk_id"]: item for item in lexical["citations"] if item["classification"] in allowed}
         model = get_dept_config().get_rag(department).get("embedding_model", "nomic-embed-text")
@@ -74,6 +77,8 @@ class OrganizationRagService:
                     continue
                 if source_id and chunk["source_id"] != source_id:
                     continue
+                if allowed_source_ids is not None and chunk["source_id"] not in allowed_source_ids:
+                    continue
                 if chunk["classification"] not in allowed:
                     continue
                 citation = {
@@ -93,7 +98,13 @@ class OrganizationRagService:
             "count": len(citations),
             "retrieval": retrieval,
             "embedding_backend": backend,
-            "permission_scope": {"tenant_id": tenant_id, "department": department, "source_id": source_id, "classifications": sorted(allowed)},
+            "permission_scope": {
+                "tenant_id": tenant_id,
+                "department": department,
+                "source_id": source_id,
+                "allowed_source_count": len(allowed_source_ids) if allowed_source_ids is not None else None,
+                "classifications": sorted(allowed),
+            },
         }
 
 

@@ -188,7 +188,7 @@ class IntraDeptOrchestrator:
             )
         return removed
 
-    def reload_custom_agents(self) -> int:
+    def reload_custom_agents(self, tenant_id: str) -> int:
         """
         Load (or refresh) all active custom agents for this dept from the store.
         Any previously-injected dynamic agents are replaced; hardcoded agents
@@ -206,7 +206,7 @@ class IntraDeptOrchestrator:
         self._by_role = {s.role_title: s for s in self._specialists}
 
         # Load fresh from store
-        records = list_custom_agents(dept_tag=self._dept_tag, active_only=True)
+        records = list_custom_agents(tenant_id, dept_tag=self._dept_tag, active_only=True)
         for rec in records:
             agent = DynamicEmployeeAgent(rec)
             self._specialists.append(agent)

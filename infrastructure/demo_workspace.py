@@ -208,6 +208,29 @@ class DemoWorkspaceStore:
         finally:
             conn.close()
 
+    def provision_workspace(
+        self,
+        *,
+        tenant_id: str,
+        company_name: str,
+        industry: str,
+        department_keys: list[str],
+    ) -> None:
+        """Create a tailored synthetic evaluation workspace for a new tenant."""
+        self.ensure_workspace(tenant_id)
+        departments = list(dict.fromkeys(key for key in department_keys if key in DEPARTMENTS))
+        if not departments:
+            raise WorkspaceError("At least one department is required to provision a workspace")
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE workspace_organizations SET name=?, industry=?, employee_count=? WHERE tenant_id=?",
+                (company_name.strip(), industry.strip() or "General business", max(2, len(departments) * 2), tenant_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def reset_workspace(self, tenant_id: str) -> dict[str, Any]:
         """Restore only this tenant's local evaluation data to its initial state."""
         conn = self._connect()
@@ -257,7 +280,7 @@ class DemoWorkspaceStore:
         data["decisions"] = self._loads(data.pop("decisions_json"))
         return data
 
-    def list_meetings(self, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
+    def list_meetings(self, tenant_id: str, status: str | None = None, departments: set[str] | None = None) -> list[dict[str, Any]]:
         self.ensure_workspace(tenant_id)
         conn = self._connect()
         try:
@@ -265,6 +288,12 @@ class DemoWorkspaceStore:
             if status:
                 query += " AND status=?"
                 values.append(status)
+            if departments is not None:
+                if not departments:
+                    return []
+                placeholders = ",".join("?" for _ in departments)
+                query += f" AND (department='' OR department IN ({placeholders}))"
+                values.extend(sorted(departments))
             query += " ORDER BY starts_at ASC"
             return [self._meeting(row) for row in conn.execute(query, values).fetchall()]
         finally:
@@ -387,7 +416,7 @@ class DemoWorkspaceStore:
             conn.close()
         return action
 
-    def list_actions(self, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
+    def list_actions(self, tenant_id: str, status: str | None = None, departments: set[str] | None = None) -> list[dict[str, Any]]:
         self.ensure_workspace(tenant_id)
         conn = self._connect()
         try:
@@ -395,12 +424,18 @@ class DemoWorkspaceStore:
             if status:
                 query += " AND status=?"
                 values.append(status)
+            if departments is not None:
+                if not departments:
+                    return []
+                placeholders = ",".join("?" for _ in departments)
+                query += f" AND department IN ({placeholders})"
+                values.extend(sorted(departments))
             query += " ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, due_date ASC"
             return [dict(row) for row in conn.execute(query, values).fetchall()]
         finally:
             conn.close()
 
-    def list_entities(self, tenant_id: str, entity_type: str | None = None) -> list[dict[str, Any]]:
+    def list_entities(self, tenant_id: str, entity_type: str | None = None, departments: set[str] | None = None) -> list[dict[str, Any]]:
         self.ensure_workspace(tenant_id)
         conn = self._connect()
         try:
@@ -408,6 +443,12 @@ class DemoWorkspaceStore:
             if entity_type:
                 query += " AND entity_type=?"
                 values.append(entity_type)
+            if departments is not None:
+                if not departments:
+                    return []
+                placeholders = ",".join("?" for _ in departments)
+                query += f" AND department IN ({placeholders})"
+                values.extend(sorted(departments))
             query += " ORDER BY entity_type, name"
             return [{**dict(row), "data": json.loads(row["data_json"])} for row in conn.execute(query, values).fetchall()]
         finally:
@@ -456,23 +497,23 @@ class DemoWorkspaceStore:
         finally:
             conn.close()
 
-    def search(self, tenant_id: str, query: str, limit: int = 30) -> dict[str, Any]:
+    def search(self, tenant_id: str, query: str, limit: int = 30, departments: set[str] | None = None) -> dict[str, Any]:
         self.ensure_workspace(tenant_id)
         terms = [term for term in re.findall(r"[a-zA-Z0-9_-]+", query.lower()) if len(term) > 1]
         if not terms:
             raise WorkspaceError("Search needs at least one meaningful term")
         items: list[dict[str, Any]] = []
-        for entity in self.list_entities(tenant_id):
+        for entity in self.list_entities(tenant_id, departments=departments):
             haystack = f"{entity['name']} {entity['entity_type']} {entity['department']} {json.dumps(entity['data'])}".lower()
             score = sum(haystack.count(term) for term in terms)
             if score:
                 items.append({"id": entity["id"], "type": entity["entity_type"], "title": entity["name"], "subtitle": entity["department"], "score": score, "data": entity["data"]})
-        for meeting in self.list_meetings(tenant_id):
+        for meeting in self.list_meetings(tenant_id, departments=departments):
             haystack = f"{meeting['title']} {meeting['meeting_type']} {meeting['department']} {meeting['notes']} {' '.join(meeting['decisions'])}".lower()
             score = sum(haystack.count(term) for term in terms)
             if score:
                 items.append({"id": meeting["id"], "type": "meeting", "title": meeting["title"], "subtitle": meeting["meeting_type"], "score": score, "data": {"starts_at": meeting["starts_at"], "status": meeting["status"]}})
-        for action in self.list_actions(tenant_id):
+        for action in self.list_actions(tenant_id, departments=departments):
             haystack = f"{action['title']} {action['owner']} {action['department']} {action['status']}".lower()
             score = sum(haystack.count(term) for term in terms)
             if score:
@@ -480,22 +521,23 @@ class DemoWorkspaceStore:
         items.sort(key=lambda item: (-item["score"], item["title"]))
         return {"query": query, "results": items[:limit], "count": min(len(items), limit), "retrieval": "tenant_scoped_workspace"}
 
-    def overview(self, tenant_id: str) -> dict[str, Any]:
+    def overview(self, tenant_id: str, department_keys: set[str] | None = None) -> dict[str, Any]:
         self.ensure_workspace(tenant_id)
         self.ensure_knowledge(tenant_id)
         conn = self._connect()
         try:
             organization = dict(conn.execute("SELECT * FROM workspace_organizations WHERE tenant_id=?", (tenant_id,)).fetchone())
-            meetings = self.list_meetings(tenant_id)
-            actions = self.list_actions(tenant_id)
-            entities = self.list_entities(tenant_id)
+            enabled_departments = department_keys if department_keys is not None else set(DEPARTMENTS)
+            meetings = self.list_meetings(tenant_id, departments=enabled_departments)
+            actions = self.list_actions(tenant_id, departments=enabled_departments)
+            entities = self.list_entities(tenant_id, departments=enabled_departments)
             department_health = [
                 {"key": key, "name": value["name"], "lead": value["lead"], "status": "attention" if key in {"sales", "customer_success"} else "on_track", "open_actions": sum(action["department"] == key and action["status"] != "done" for action in actions)}
-                for key, value in DEPARTMENTS.items()
+                for key, value in DEPARTMENTS.items() if key in enabled_departments
             ]
             return {
                 "organization": organization,
-                "metrics": {"employees": organization["employee_count"], "departments": len(DEPARTMENTS), "open_actions": sum(action["status"] != "done" for action in actions), "upcoming_meetings": sum(meeting["status"] == "scheduled" for meeting in meetings)},
+                "metrics": {"employees": organization["employee_count"], "departments": len(enabled_departments), "open_actions": sum(action["status"] != "done" for action in actions), "upcoming_meetings": sum(meeting["status"] == "scheduled" for meeting in meetings)},
                 "meetings": meetings[:4],
                 "actions": actions[:6],
                 "departments": department_health,

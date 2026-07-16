@@ -125,12 +125,32 @@ class OrganizationDataStore:
 
     @staticmethod
     def _safe_config(config: dict[str, Any] | None) -> dict[str, Any]:
-        """Configuration contains references only; raw credentials must stay in a secret manager."""
+        """Keep credentials out of source metadata and normalize access controls."""
         clean = dict(config or {})
         forbidden = {"password", "token", "secret", "api_key", "access_token", "refresh_token"}
         if forbidden & {str(key).lower() for key in clean}:
             raise OrganizationDataError("Store connector credentials in a secret manager, not source configuration")
+        for key in ("allowed_roles", "allowed_user_ids"):
+            if key not in clean:
+                continue
+            values = clean[key]
+            if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+                raise OrganizationDataError(f"{key} must be a list of identifiers")
+            normalized = sorted({value.strip() for value in values if value.strip()})
+            if len(normalized) > 100 or any(len(value) > 128 for value in normalized):
+                raise OrganizationDataError(f"{key} has too many or invalid identifiers")
+            clean[key] = normalized
         return clean
+
+    @staticmethod
+    def source_allows(source: dict[str, Any], user_id: str, role: str) -> bool:
+        """Apply optional source-level allow lists after tenant, department, and classification checks."""
+        config = source.get("config") or {}
+        allowed_roles = set(config.get("allowed_roles") or [])
+        allowed_users = set(config.get("allowed_user_ids") or [])
+        if not allowed_roles and not allowed_users:
+            return True
+        return user_id in allowed_users or role in allowed_roles
 
     def register_source(self, tenant_id: str, department: str, name: str, source_type: str,
                         connector_type: str, classification: str, created_by: str,
@@ -285,7 +305,15 @@ class OrganizationDataStore:
             start = max(start + 1, end - overlap)
         return chunks
 
-    def search(self, tenant_id: str, department: str, query: str, source_id: str | None = None, limit: int = 8) -> dict:
+    def search(
+        self,
+        tenant_id: str,
+        department: str,
+        query: str,
+        source_id: str | None = None,
+        limit: int = 8,
+        allowed_source_ids: set[str] | None = None,
+    ) -> dict:
         if department not in DEPARTMENTS:
             raise OrganizationDataError("Unknown department")
         tokens = self._tokens(query)
@@ -299,8 +327,16 @@ class OrganizationDataStore:
                 source = self._source_row(conn, tenant_id, source_id)
                 if source["department"] != department:
                     raise OrganizationDataError("Data source is outside this department")
+                if allowed_source_ids is not None and source_id not in allowed_source_ids:
+                    return {"query": query, "department": department, "citations": [], "count": 0, "retrieval": "lexical_sandbox"}
                 where += " AND source_id=?"
                 params.append(source_id)
+            elif allowed_source_ids is not None:
+                if not allowed_source_ids:
+                    return {"query": query, "department": department, "citations": [], "count": 0, "retrieval": "lexical_sandbox"}
+                placeholders = ",".join("?" for _ in allowed_source_ids)
+                where += f" AND source_id IN ({placeholders})"
+                params.extend(sorted(allowed_source_ids))
             rows = conn.execute(f"SELECT * FROM organization_document_chunks WHERE {where}", params).fetchall()
             ranked = []
             for row in rows:

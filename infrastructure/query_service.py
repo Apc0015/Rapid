@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from agents.system.audit_logger import get_audit
@@ -48,13 +48,20 @@ class QueryResponse(BaseModel):
     provider_used: Optional[str] = None
 
 
-def save_to_history(session_id: str, user_query: str, answer: str, background_tasks: BackgroundTasks) -> None:
+def save_to_history(
+    session_id: str,
+    user_id: str,
+    tenant_id: str,
+    user_query: str,
+    answer: str,
+    background_tasks: BackgroundTasks,
+) -> None:
     from infrastructure.chat_history import ChatHistory
 
     history = ChatHistory()
     background_tasks.add_task(history.append_message, session_id, "user", user_query)
     background_tasks.add_task(history.append_message, session_id, "assistant", answer)
-    background_tasks.add_task(history.auto_title, session_id, user_query)
+    background_tasks.add_task(history.auto_title, session_id, user_id, tenant_id, user_query)
 
 
 async def run_query(req: QueryRequest, current_user: dict, background_tasks: BackgroundTasks) -> QueryResponse:
@@ -70,6 +77,11 @@ async def run_query(req: QueryRequest, current_user: dict, background_tasks: Bac
     from infrastructure.user_registry import load_users
 
     tenant_id = current_user.get("tenant_id", DEFAULT_TENANT_ID)
+    if req.session_id:
+        from infrastructure.chat_history import ChatHistory
+
+        if not await ChatHistory().get_session(req.session_id, user_id, tenant_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
     set_current_tenant(tenant_id)
     tenant_llm = await get_llm_for_tenant(tenant_id)
     set_active_llm(tenant_llm)
@@ -77,6 +89,7 @@ async def run_query(req: QueryRequest, current_user: dict, background_tasks: Bac
     query_event = {
         "query_id": query_id,
         "user_id": user_id,
+        "tenant_id": tenant_id,
         "raw_query": req.query,
         "timestamp": datetime.utcnow().isoformat(),
         "provider": provider_name,
@@ -103,7 +116,7 @@ async def run_query(req: QueryRequest, current_user: dict, background_tasks: Bac
             provider_used=provider_name,
         )
         if req.session_id:
-            save_to_history(req.session_id, req.query, response.answer, background_tasks)
+            save_to_history(req.session_id, user_id, tenant_id, req.query, response.answer, background_tasks)
         return response
 
     if intent == INTENT_TRIVIAL:
@@ -165,7 +178,7 @@ async def run_query(req: QueryRequest, current_user: dict, background_tasks: Bac
         provider_used=provider_name,
     )
     if req.session_id:
-        save_to_history(req.session_id, req.query, response.answer, background_tasks)
+        save_to_history(req.session_id, user_id, tenant_id, req.query, response.answer, background_tasks)
     return response
 
 

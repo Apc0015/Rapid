@@ -98,6 +98,8 @@ from routers.workspace import router as workspace_router
 from routers.tenant_admin import router as tenant_admin_router
 from routers.jobs import router as jobs_router
 from routers.intelligence import router as intelligence_router
+from routers.onboarding import router as onboarding_router
+from routers.beta import router as beta_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -309,7 +311,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAPID Organization OS",
-    description="Governed autonomous workflows for organization-wide operations",
+    description="Governed, evidence-aware workflows for startup operations",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -360,10 +362,14 @@ app.include_router(database_router)
 app.include_router(llm_router)
 app.include_router(monitoring_router)
 app.include_router(sessions_router)
-app.include_router(onedrive_router)
-app.include_router(gmail_router)
-app.include_router(gdrive_router)
-app.include_router(github_router)
+# Older direct OAuth connectors store user-scoped tokens and bypass the tenant
+# governed ingestion path. Keep them unavailable by default while supported
+# tenant-scoped adapters are migrated into the integration hub.
+if os.getenv("RAPID_ENABLE_LEGACY_CLOUD_CONNECTORS", "false").lower() in {"1", "true", "yes"}:
+    app.include_router(onedrive_router)
+    app.include_router(gmail_router)
+    app.include_router(gdrive_router)
+    app.include_router(github_router)
 app.include_router(admin_folders_router)
 app.include_router(departments_router)
 app.include_router(backup_router)
@@ -394,6 +400,8 @@ app.include_router(workspace_router)
 app.include_router(tenant_admin_router)
 app.include_router(jobs_router)
 app.include_router(intelligence_router)
+app.include_router(onboarding_router)
+app.include_router(beta_router)
 
 # Digital Organization — HR, IT, Finance, Marketing (built departments)
 app.include_router(hr_router)
@@ -440,6 +448,8 @@ async def query(
     Rate limited: 30 queries/minute per IP.
     Times out after 120 seconds.
     """
+    if os.getenv("RAPID_ENABLE_LEGACY_INTELLIGENCE", "false" if os.getenv("RAPID_ENV", "development") == "production" else "true").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=410, detail="This endpoint has been retired. Use /intelligence/ask.")
     # Enforce max query length
     if len(req.query) > 2000:
         raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
@@ -466,6 +476,8 @@ async def ask(
     req:          QueryRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    if os.getenv("RAPID_ENABLE_LEGACY_INTELLIGENCE", "false" if os.getenv("RAPID_ENV", "development") == "production" else "true").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=410, detail="This endpoint has been retired. Use /intelligence/ask.")
     if len(req.query) > 2000:
         raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
 
@@ -477,8 +489,8 @@ async def ask(
 
     query_id = str(uuid.uuid4())
 
-    # Departments this user may search: from the JWT depts claim; privileged
-    # roles (and users with no dept restriction) search everything indexed.
+    # Departments this user may search: privileged roles see the tenant-wide
+    # index. Everyone else fails closed to their explicit JWT department claim.
     # Indexes are tenant-scoped on disk: data/faiss/{tenant}/{dept}.
     tenant_id = current_user.get("tenant_id", "default")
     # The RAG pipeline resolves BM25 and vector stores through this tenant context.
@@ -494,7 +506,7 @@ async def ask(
         indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
     role  = current_user.get("role", "employee")
     depts = current_user.get("depts") or []
-    if role in ("admin", "ceo", "board_member") or not depts:
+    if role in ("admin", "ceo", "board_member"):
         candidates = indexed
     else:
         candidates = [d for d in indexed if d in depts]
@@ -535,6 +547,7 @@ async def ask(
 
     get_audit().log_query({
         "query_id": query_id, "user_id": current_user["sub"],
+        "tenant_id": tenant_id,
         "raw_query": req.query, "timestamp": datetime.utcnow().isoformat(),
         "intent_class": "ASK_RAG", "depts_activated": [best_dept],
         "composite_confidence": result.confidence, "action_taken": "ask_rag",

@@ -54,7 +54,7 @@ services:
       RAPID_JOB_DB_PATH: data/db/jobs.db
       RAPID_ENABLE_JOB_WORKER: "false"
       RAPID_REQUIRE_JOB_WORKER: "true"
-      RAPID_ENABLE_SCHEDULER: ${RAPID_ENABLE_SCHEDULER:-true}
+      RAPID_ENABLE_SCHEDULER: "false"
       USE_QDRANT: ${USE_QDRANT:-false}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     volumes:
@@ -102,6 +102,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - rapid-network
+    restart: unless-stopped
+
+  # One explicit scheduler owner prevents API worker replicas from each
+  # attempting schedule dispatch. The database claim still protects failover.
+  scheduler:
+    build: .
+    command: ["python", "-m", "workers.scheduler"]
+    environment:
+      RAPID_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set — see README.md}
+      RAPID_ENCRYPTION_KEY: ${RAPID_ENCRYPTION_KEY:?RAPID_ENCRYPTION_KEY must be set — see .env.example}
+      RAPID_SCHEDULER_INTERVAL_SECONDS: ${RAPID_SCHEDULER_INTERVAL_SECONDS:-60}
+    volumes:
+      - rapid-data:/app/data
+      - rapid-logs:/app/logs
+    depends_on:
+      rapid:
+        condition: service_healthy
     networks:
       - rapid-network
     restart: unless-stopped

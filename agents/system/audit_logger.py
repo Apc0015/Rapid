@@ -42,6 +42,7 @@ class AuditLogger:
                 event_type      TEXT NOT NULL,
                 query_id        TEXT,
                 user_id         TEXT,
+                tenant_id       TEXT,
                 timestamp       TEXT NOT NULL,
                 retained_until  TEXT NOT NULL,
                 raw_query       TEXT,
@@ -56,6 +57,7 @@ class AuditLogger:
 
             CREATE TABLE IF NOT EXISTS agent_scores (
                 score_id    TEXT PRIMARY KEY,
+                tenant_id   TEXT NOT NULL DEFAULT 'default',
                 agent_id    TEXT NOT NULL,
                 task_id     TEXT,
                 score       REAL,
@@ -76,6 +78,15 @@ class AuditLogger:
             logger.info("Audit migration: retained_until column added and back-filled")
         except sqlite3.OperationalError:
             pass  # Column already exists — normal startup
+        try:
+            conn.execute("ALTER TABLE audit_log ADD COLUMN tenant_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists — normal startup
+        try:
+            conn.execute("ALTER TABLE agent_scores ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_scores_tenant ON agent_scores(tenant_id, agent_id, timestamp)")
         conn.commit()
         conn.close()
         # Purge any already-expired rows on startup (table now guaranteed to exist)
@@ -92,6 +103,7 @@ class AuditLogger:
             "event_type": "QUERY",
             "query_id": query_event.get("query_id"),
             "user_id": query_event.get("user_id"),
+            "tenant_id": query_event.get("tenant_id"),
             "raw_query": query_event.get("raw_query"),
             "intent_class": query_event.get("intent_class"),
             "depts_activated": json.dumps(query_event.get("depts_activated", [])),
@@ -108,6 +120,7 @@ class AuditLogger:
             "event_type": "GOVERNANCE",
             "query_id": governance_event.get("query_id"),
             "user_id": governance_event.get("user_id"),
+            "tenant_id": governance_event.get("tenant_id"),
             "severity": "HIGH" if governance_event.get("action") == "BLOCK" else "LOW",
             "details": json.dumps(governance_event),
         })
@@ -118,15 +131,17 @@ class AuditLogger:
             "event_type": "BLOCK",
             "query_id": block_event.get("query_id"),
             "user_id": block_event.get("user_id"),
+            "tenant_id": block_event.get("tenant_id"),
             "severity": "CRITICAL",
             "details": json.dumps(block_event),
         })
         logger.warning(f"AUDIT BLOCK: {block_event}")
 
-    def log_auth_failure(self, user_id: str, reason: str):
+    def log_auth_failure(self, user_id: str, reason: str, tenant_id: str | None = None):
         self._insert({
             "event_type": "AUTH_FAILURE",
             "user_id": user_id,
+            "tenant_id": tenant_id,
             "severity": "HIGH",
             "details": json.dumps({"reason": reason}),
         })
@@ -137,6 +152,7 @@ class AuditLogger:
         self,
         user_id: Optional[str] = None,
         event_type: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         limit: int = 100,
         include_expired: bool = False,
     ) -> list:
@@ -161,6 +177,9 @@ class AuditLogger:
         if event_type:
             clauses.append("event_type = ?")
             params.append(event_type)
+        if tenant_id:
+            clauses.append("tenant_id = ?")
+            params.append(tenant_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = conn.execute(
             f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT ?",
@@ -223,23 +242,23 @@ class AuditLogger:
 
     # ── Agent score writing ───────────────────────────────────────────────────
 
-    def write_agent_score(self, agent_id: str, task_id: str, score: float, dimensions: dict):
+    def write_agent_score(self, agent_id: str, task_id: str, score: float, dimensions: dict, tenant_id: str = "default"):
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            "INSERT INTO agent_scores (score_id, agent_id, task_id, score, timestamp, dimensions) VALUES (?,?,?,?,?,?)",
-            (str(uuid.uuid4()), agent_id, task_id, score, datetime.utcnow().isoformat(), json.dumps(dimensions)),
+            "INSERT INTO agent_scores (score_id, tenant_id, agent_id, task_id, score, timestamp, dimensions) VALUES (?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), tenant_id, agent_id, task_id, score, datetime.now(timezone.utc).isoformat(), json.dumps(dimensions)),
         )
         conn.commit()
         conn.close()
 
-    def get_agent_stats(self, agent_id: str) -> dict:
+    def get_agent_stats(self, agent_id: str, tenant_id: str) -> dict:
         if self.db_path == ":memory:":
             conn = sqlite3.connect(self.db_path)
         else:
             conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         rows = conn.execute(
-            "SELECT score, timestamp FROM agent_scores WHERE agent_id = ? ORDER BY timestamp DESC",
-            (agent_id,),
+            "SELECT score, timestamp FROM agent_scores WHERE agent_id = ? AND tenant_id = ? ORDER BY timestamp DESC",
+            (agent_id, tenant_id),
         ).fetchall()
         conn.close()
         if not rows:
@@ -261,7 +280,7 @@ class AuditLogger:
         data["timestamp"]     = now.isoformat()
         data["retained_until"] = (now + timedelta(days=365 * RETENTION_YEARS)).isoformat()
         fields = [
-            "log_id", "event_type", "query_id", "user_id", "timestamp",
+            "log_id", "event_type", "query_id", "user_id", "tenant_id", "timestamp",
             "retained_until", "raw_query", "intent_class", "depts_activated",
             "agents_selected", "confidence", "action_taken", "severity", "details",
         ]
