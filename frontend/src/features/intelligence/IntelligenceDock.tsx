@@ -80,7 +80,7 @@ export function IntelligenceDock({ view }: IntelligenceDockProps) {
       {open && (pending || answer) ? <div className="intelligence-result" aria-live="polite">
         {pending ? <p className="intelligence-pending"><Bot size={15} aria-hidden="true" /> Preparing a governed response</p> : null}
         {answer ? <>
-          <div className="intelligence-response"><p>{answer.answer}</p><div className="intelligence-meta"><span>{answer.mode === 'agent_engine' ? 'Agent response' : 'Scoped evidence'}</span>{answer.confidence ? <span>{Math.round(answer.confidence * 100)}% confidence</span> : null}{answer.departments.length ? <span>{answer.departments.join(', ').replaceAll('_', ' ')}</span> : null}</div></div>
+          <div className="intelligence-response"><p>{answer.answer}</p><div className="intelligence-meta"><span>{answer.mode === 'scoped_evidence_fallback' ? 'Scoped evidence' : 'RAPID intelligence'}</span>{answer.confidence ? <span>{Math.round(answer.confidence * 100)}% confidence</span> : null}{answer.departments.length ? <span>{answer.departments.join(', ').replaceAll('_', ' ')}</span> : null}</div></div>
           {answer.evidence.length ? <details className="intelligence-evidence"><summary>{answer.evidence.length} approved source{answer.evidence.length === 1 ? '' : 's'}</summary><ul>{answer.evidence.map((item, index) => <li key={`${item.title}-${index}`}><strong>{item.title}</strong><span>{item.excerpt}</span></li>)}</ul></details> : null}
           {answer.warning ? <p className="intelligence-warning">{answer.warning}</p> : null}
         </> : null}

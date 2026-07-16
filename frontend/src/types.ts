@@ -150,9 +150,11 @@ export interface SearchResult {
 }
 
 export interface IntelligenceEvidence {
-  kind: 'workspace_record' | 'knowledge';
+  kind: 'workspace_record' | 'knowledge' | 'project_data';
   title: string;
   excerpt: string;
+  department?: string | null;
+  classification?: string | null;
 }
 
 export interface IntelligenceAnswer {
@@ -163,8 +165,13 @@ export interface IntelligenceAnswer {
   departments: string[];
   action: string;
   provider?: string | null;
-  mode: 'agent_engine' | 'scoped_evidence_fallback';
+  mode: 'organization_agent' | 'project_agent' | 'portfolio_agent' | 'scoped_evidence_fallback';
   evidence: IntelligenceEvidence[];
+  scope?: string;
+  sources?: string[];
+  data_gaps?: string[];
+  agent?: string | null;
+  duration_ms?: number | null;
 }
 
 export interface OperatingReport {

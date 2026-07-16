@@ -56,7 +56,8 @@ RAPID/
 │   └── jobs.py / monitoring.py Durable job visibility, metrics, liveness, readiness
 │
 ├── infrastructure/            Product services and storage adapters
-│   ├── query_service.py       Main governed query pipeline
+│   ├── intelligence_gateway.py Shared intelligence scope, evidence, and specialist routing
+│   ├── query_service.py       Backward-compatible organization-agent specialist
 │   ├── organization_rag.py    Permission-aware organization retrieval
 │   ├── document_extractor.py  Text extraction, OCR, PII handling
 │   ├── embedding_service.py   Configurable embedding provider
@@ -258,9 +259,12 @@ nginx (:80)
         ├── Workspace API: meetings, CRM, reports, search, notifications
         ├── Tenant/Admin API: users, configuration, organization structure, integrations
         ├── Project API: scoped queries, skills, approvals, generated documents
-        └── Governed data and intelligence services
-              query service · department agents · RAG · search
-              extraction/OCR · PII rules · permissions
+        └── Unified intelligence gateway
+              shared scope · permissions · evidence · audit contract
+                   ├── organization agent specialist
+                   ├── project and portfolio specialists
+                   └── governed data and retrieval services
+                         RAG · search · extraction/OCR · PII rules
                    ├── SQLite + files: tenant/project metadata and documents
                    ├── FAISS or Qdrant: vector retrieval and embeddings
                    ├── OpenRouter/Ollama: configured tenant model providers

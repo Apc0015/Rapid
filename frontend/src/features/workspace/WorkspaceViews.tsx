@@ -7,6 +7,7 @@ import type {
   AgentAction,
   ActionItem,
   BusinessRecord,
+  IntelligenceAnswer,
   AgentSkill,
   LibraryDocument,
   Meeting,
@@ -15,7 +16,6 @@ import type {
   PortfolioIntelligenceAnswer,
   ProjectDocument,
   ProjectHealth,
-  ProjectIntelligenceAnswer,
   ProjectMember,
   PortalUser,
   RegisteredProject,
@@ -146,7 +146,7 @@ function ProjectIntelligence({ projects, onRefresh }: { projects: RegisteredProj
   const [error, setError] = useState('');
   const [question, setQuestion] = useState('');
   const [mode, setMode] = useState('analysis');
-  const [answer, setAnswer] = useState<ProjectIntelligenceAnswer | null>(null);
+  const [answer, setAnswer] = useState<IntelligenceAnswer | null>(null);
   const [asking, setAsking] = useState(false);
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
@@ -189,8 +189,8 @@ function ProjectIntelligence({ projects, onRefresh }: { projects: RegisteredProj
     if (!selectedId || !question.trim()) return;
     setAsking(true); setError(''); setAnswer(null);
     try {
-      const result = await apiRequest<ProjectIntelligenceAnswer>(`/projects/${selectedId}/query`, {
-        method: 'POST', body: JSON.stringify({ query: question.trim(), mode }),
+      const result = await apiRequest<IntelligenceAnswer>('/intelligence/ask', {
+        method: 'POST', body: JSON.stringify({ question: question.trim(), project_id: selectedId, mode }),
       });
       setAnswer(result);
     } catch (issue) { setError(issue instanceof Error ? issue.message : 'The project agent could not complete that request.'); }
@@ -280,7 +280,7 @@ function ProjectIntelligence({ projects, onRefresh }: { projects: RegisteredProj
           <div className="project-health-head"><div><h3>{selected.name}</h3><p>{selected.description || `${projectDepartment(selected)} project workspace`}</p></div><div><StatusTag value={selected.priority} /><StatusTag value={selected.status} /></div></div>
           {health?.status ? <div className="project-data-note">{health.message || 'This project data space is ready for configuration.'}</div> : <div className="project-health-grid">{health?.kpis?.slice(0, 3).map((kpi) => <article key={kpi.kpi_name}><span>{kpi.kpi_name}</span><strong>{formatValue('value', kpi.current_value)}</strong><small>{kpi.target_value === null || kpi.target_value === undefined ? kpi.status : `Target ${formatValue('value', kpi.target_value)}`}</small></article>)}{leadRisk ? <article><span>Open risks</span><strong>{health?.open_risks?.length}</strong><small>{leadRisk.title}</small></article> : null}</div>}
           <form id="project-intelligence-form" className="project-query-form" onSubmit={askProject}><label><span>Ask about this project</span><textarea id="project-intelligence-question" value={question} onChange={(event) => setQuestion(event.target.value)} minLength={2} required placeholder="Identify the current delivery risks" /></label><div><select aria-label="Project analysis mode" value={mode} onChange={(event) => setMode(event.target.value)}><option value="query">Question</option><option value="analysis">Analysis</option><option value="planning">Plan</option><option value="reporting">Report</option></select><button className="product-button primary" type="submit" disabled={asking}>{asking ? 'Analyzing…' : 'Ask project agent'}</button></div></form>
-          {answer ? <section id="project-intelligence-output" className="project-answer"><div><strong>Scoped answer</strong><span>{Math.round(answer.confidence * 100)}% confidence · {answer.agent_used.replaceAll('_', ' ')}</span></div><p>{answer.answer}</p>{answer.data_gaps.length ? <small>Data gaps: {answer.data_gaps.join(' · ')}</small> : null}</section> : null}
+          {answer ? <section id="project-intelligence-output" className="project-answer"><div><strong>Scoped answer</strong><span>{Math.round(answer.confidence * 100)}% confidence · {(answer.agent || 'project specialist').replaceAll('_', ' ')}</span></div><p>{answer.answer}</p>{answer.data_gaps?.length ? <small>Data gaps: {answer.data_gaps.join(' · ')}</small> : null}</section> : null}
           <div className="project-documents"><div><h3>Generated documents</h3><p>{documents.length} outputs available to this project.</p></div>{documents.length ? <ul>{documents.slice(0, 4).map((document) => <li key={`${document.title}-${document.created_at}`}><span><strong>{document.title}</strong><small>{document.file_format || 'file'} · {formatDate(document.created_at, false)}</small></span>{document.download_url ? <button className="icon-button icon-only" type="button" aria-label={`Download ${document.title}`} title="Download document" onClick={() => void downloadFile(document.download_url!, document.title)}><Download size={13} /></button> : null}</li>)}</ul> : <small>No generated documents yet.</small>}</div>
           <div className="project-skills"><div><h3>Available agent skills</h3><p>{skills.length} skills are permitted for this project’s department.</p></div><ul>{skills.slice(0, 6).map((skill) => <li key={skill.skill_id}><span><strong>{skill.skill_id.replaceAll('_', ' ')}</strong><small>{skill.description || 'Generated output with review controls.'}</small></span><div><em>{skill.output_format}</em><button className="icon-button icon-only" type="button" aria-label={`Run ${skill.skill_id}`} title="Run skill" onClick={() => void executeSkill(skill)}><Sparkles size={13} /></button></div></li>)}</ul></div>
           {skillOutput ? <section className="project-answer"><div><strong>{skillOutput.title}</strong><span>{skillOutput.download_url ? 'Approved output' : 'Queued for review'}</span></div><p>{skillOutput.message || skillOutput.preview || 'Skill output generated.'}</p>{skillOutput.download_url ? <button className="product-button secondary compact" type="button" onClick={() => void downloadFile(skillOutput.download_url!, skillOutput.title)}><Download size={13} /> Download approved output</button> : null}</section> : null}

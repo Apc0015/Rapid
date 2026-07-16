@@ -421,7 +421,7 @@ if _frontend_dir.is_dir():
 
 # ── Main query endpoint ───────────────────────────────────────────────────────
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query", response_model=QueryResponse, deprecated=True)
 @limiter.limit("30/minute")
 async def query(
     request:          Request,
@@ -430,7 +430,9 @@ async def query(
     current_user:     dict = Depends(get_current_user),
 ):
     """
-    Full query pipeline — JWT Bearer auth required.
+    Backward-compatible raw agent query endpoint — JWT Bearer auth required.
+    Product surfaces use /intelligence/ask, which resolves shared scope,
+    permissions, evidence, and specialist routing first.
     Rate limited: 30 queries/minute per IP.
     Times out after 120 seconds.
     """
