@@ -202,7 +202,7 @@
 .overview-records { display: grid; grid-template-columns: minmax(150px, .55fr) minmax(0, 2.6fr) auto; align-items: center; gap: 20px; margin-top: 20px; padding: 18px 0; border-top: 1px solid var(--product-border); border-bottom: 1px solid var(--product-border); }
 .overview-records > div:first-child { display: grid; gap: 2px; }
 .overview-records > div:first-child strong { font-size: 13px; }
-.overview-records > div:first-child span { color: var(--text-muted); font-size: 10px; }
+.overview-records > div:first-child span { color: #626a76; font-size: 10px; }
 .overview-records .record-catalog { display: flex; gap: 0; overflow-x: auto; }
 .overview-records .record-count { min-width: 0; flex: 1 0 auto; padding: 0 12px; background: transparent; border: 0; border-right: 1px solid var(--product-border); border-radius: 0; }
 .overview-records .record-count:first-child { padding-left: 0; }
@@ -240,6 +240,133 @@
   .action-controls { justify-content: flex-start; }
   .overview-meetings .meeting-row { grid-template-columns: 78px minmax(0, 1fr); }
   .overview-records { margin-top: 16px; }
+}
+
+/* Light workspace system: a quiet, task-first surface shared by every product route. */
+:root { --product-border: #dfe3ea; --product-muted: #5f6673; }
+body, .product-page, .auth-page { background: var(--bg); color: var(--text); }
+.product-page { background: var(--bg); }
+.product-shell { grid-template-columns: 252px minmax(0, 1fr); }
+.product-sidebar, .portal-sidebar { background: #fff; border-color: var(--product-border); box-shadow: none; }
+.product-sidebar { padding: 18px 12px 14px; }
+.portal-brand-row { display: flex; align-items: center; justify-content: space-between; }
+.product-brand { padding: 3px 8px 17px; border-color: var(--product-border); color: #1d1d1f; font-size: 15px; letter-spacing: -0.01em; }
+.product-brand > span, .mobile-brand > span, .boot-brand > span { background: var(--accent); border-radius: 7px; }
+.workspace-switcher { margin: 15px 6px 20px; padding: 9px 8px; background: transparent; border-color: transparent; border-radius: 7px; }
+.workspace-switcher:hover { background: var(--surface-raised); }
+.workspace-switcher > span { color: var(--accent); background: var(--accent-dim); }
+.workspace-switcher strong { color: var(--text); font-size: 12px; }
+.workspace-switcher small { color: var(--text-muted); }
+.nav-group { gap: 1px; margin-bottom: 14px; }
+.nav-group-label { padding: 0 9px 5px; color: #89909d; font-size: 10px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
+.product-nav button, .portal-nav a, .product-sidebar-footer a, .product-sidebar-footer button {
+  min-height: 36px; color: #545b67; border-radius: 7px; font-size: 13px; font-weight: 500;
+}
+.product-nav button { width: 100%; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; padding: 7px 9px; text-align: left; }
+.product-nav button > span, .portal-nav a > span { width: 19px; height: 19px; display: grid; place-items: center; flex: 0 0 19px; color: #6c7482; background: transparent; border: 0; border-radius: 0; }
+.product-nav button:hover, .portal-nav a:hover, .product-sidebar-footer a:hover, .product-sidebar-footer button:hover { color: #1d1d1f; background: #f1f4f8; }
+.product-nav button.active, .portal-nav a.active, .product-sidebar-footer button.active { color: var(--accent); background: var(--accent-dim); font-weight: 650; }
+.product-nav button.active > span, .portal-nav a.active > span { color: var(--accent); background: transparent; border: 0; }
+.product-nav button b { margin-left: auto; min-width: 18px; padding: 1px 5px; color: var(--accent); background: #dceaff; border-radius: 999px; font-size: 10px; }
+.product-sidebar-footer { padding: 14px 4px 2px; border-color: var(--product-border); }
+.product-main, .portal-main { width: min(1480px, 100%); max-width: none; padding: 38px 48px 64px; }
+.portal-header { align-items: center; margin-bottom: 30px; padding-bottom: 0; border: 0; }
+.auth-kicker, .section-context { color: #4d5562 !important; font-size: 11px !important; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.portal-header h1 { margin-top: 4px; color: #1d1d1f; font-size: 32px; font-weight: 700; letter-spacing: -0.028em; }
+.portal-header p:not(.auth-kicker) { max-width: 65ch; color: #626977; font-size: 15px; }
+.header-actions { gap: 10px; }
+.sandbox-badge { color: #27785f; background: #edf9f4; border: 1px solid #b8e6d4; border-radius: 6px; padding: 7px 9px; font-size: 11px; }
+.product-button { min-height: 36px; border-radius: 7px; padding: 7px 12px; font-size: 12px; font-weight: 600; }
+.product-button.primary, .intelligence-submit { background: var(--accent); }
+.product-button.primary:hover, .intelligence-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.product-button.secondary { color: #2d3440; background: #fff; border-color: #cfd5df; }
+.product-button.secondary:hover { background: #f5f7fa; border-color: #aeb7c6; }
+.icon-button { color: #59616d; background: #fff; border-color: #d4d9e2; border-radius: 7px; }
+.icon-button:hover { color: #1d1d1f; background: #f6f8fa; }
+.intelligence-dock { margin-bottom: 28px; background: #fff; border-color: #d7dde7; border-radius: 9px; box-shadow: 0 1px 2px rgba(24,33,51,.04); }
+.intelligence-dock:focus-within, .intelligence-dock.open { background: #fff; border-color: #86adfb; box-shadow: 0 0 0 3px rgba(10,99,244,.10); }
+.intelligence-prompt { min-height: 64px; padding: 10px 12px 10px 15px; }
+.intelligence-mark { width: 32px; height: 32px; flex-basis: 32px; color: var(--accent); background: var(--accent-dim); border: 0; border-radius: 8px; }
+.intelligence-prompt input { color: #1d1d1f; font-size: 15px; }
+.intelligence-prompt input::placeholder { color: #737b88; }
+.intelligence-submit { width: 36px; height: 36px; flex-basis: 36px; border-radius: 7px; }
+.intelligence-result { padding: 17px 20px 18px 61px; border-color: var(--product-border); }
+.intelligence-evidence summary, .text-button, .section-title > a.text-button { color: var(--accent); }
+.intelligence-evidence summary:hover, .text-button:hover, .section-title > a.text-button:hover { color: var(--accent-hover); }
+.intelligence-warning { color: #8f5707; }
+.metric-strip, .overview-metrics { background: #fff; border-color: var(--product-border); border-radius: 9px; margin-bottom: 28px; }
+.metric-strip article, .overview-metrics article { min-height: 116px; padding: 20px 22px; border-color: var(--product-border); }
+.metric-strip span, .metric-strip small, .overview-metrics span, .overview-metrics small { color: #68707c; font-size: 12px; }
+.metric-strip strong, .overview-metrics strong { margin: 12px 0 8px; color: #1d1d1f; font-size: 30px; font-weight: 650; letter-spacing: -0.035em; }
+.workspace-section, .overview-priorities, .overview-meetings, .project-intelligence, .entity-card, .department-card, .search-result, .notification-row, .global-search { background: #fff; border-color: var(--product-border); }
+.workspace-section { border-radius: 9px; padding: 22px; box-shadow: none; }
+.section-title { margin-bottom: 18px; }
+.section-title h2, .overview-workboard .section-title h2 { color: #1d1d1f; font-size: 18px; letter-spacing: -0.018em; }
+.section-title p, .overview-workboard .section-title > div > p:not(.section-context) { color: #69717d; font-size: 12px; }
+.overview-workboard { grid-template-columns: minmax(0, 1fr) minmax(340px, .8fr); gap: 22px; }
+.overview-workboard .workspace-section { min-height: 406px; padding: 22px; }
+.overview-priorities, .overview-meetings { background: #fff; }
+.overview-priorities .action-row, .overview-meetings .meeting-row { border-color: var(--product-border); }
+.overview-priorities .action-row strong, .overview-meetings .meeting-title strong { color: #252a33; font-size: 13px; }
+.overview-priorities .action-row small, .overview-meetings .meeting-title small, .meeting-date, .meeting-date small { color: #68707c; font-size: 11px; }
+.overview-meetings .meeting-row { background: transparent; border-color: var(--product-border); }
+.overview-meetings .meeting-row:hover { background: #f8faff; border-color: #b6c8e8; }
+.action-controls select, .project-query-form select { color: #343b47; background: #fff; border-color: #ccd3de; }
+.priority { border: 0; border-radius: 5px; font-size: 10px; }
+.priority.high { color: #9f3438; background: #fff0f0; }
+.priority.medium { color: #8b580e; background: #fff5e8; }
+.priority.low { color: #28745f; background: #eaf8f2; }
+.overview-departments { margin-top: 22px; padding: 22px; background: #fff; border-color: var(--product-border); }
+.department-grid, .project-health-grid { border-color: var(--product-border); }
+.department-summary { background: #fff; border-color: var(--product-border); }
+.department-summary:hover { background: #f7f9fc; border-color: var(--product-border); }
+.department-summary strong { color: #2b313b; }
+.department-summary small, .department-summary b { color: #69717d; }
+.overview-records { margin-top: 22px; padding: 20px 2px; border-color: var(--product-border); }
+.overview-records .record-count { color: #2e3540; }
+.overview-records .record-count:hover { color: var(--accent); }
+.portal-table th { color: #6b7280; background: #f7f8fa; border-color: var(--product-border); }
+.portal-table td { color: #555d6a; border-color: var(--product-border); }
+.portal-table td strong, .entity-card h3, .department-card h2 { color: #252a33; }
+.portal-table tbody tr:hover td { background: #f7f9fc; }
+.person-cell > span { color: var(--accent); background: var(--accent-dim); }
+.entity-card, .department-card { border-radius: 9px; }
+.entity-card:hover, .department-card:hover { border-color: #b7c9e9; }
+.status-tag { color: #586170; background: #f2f4f7; border-color: #d9dee6; }
+.status-tag.scheduled, .status-tag.enabled, .status-tag.configured, .status-tag.release_ready, .status-tag.healthy, .status-tag.on_track { color: #245eb4; background: #edf4ff; border-color: #c4d9fb; }
+.status-tag.completed, .status-tag.done, .status-tag.sandbox, .status-tag.sandbox_ready, .status-tag.approved { color: #23755c; background: #edf9f4; border-color: #c4e9da; }
+.status-tag.urgent, .status-tag.high, .status-tag.at_risk, .status-tag.cancelled { color: #a53d41; background: #fff1f1; border-color: #f1caca; }
+.status-tag.in_progress, .status-tag.review, .status-tag.investigating, .status-tag.triage, .status-tag.needs_credentials, .status-tag.approval_required, .status-tag.attention { color: #8b590e; background: #fff6e9; border-color: #f2d8a9; }
+.admin-card, .connection-row, .run-row, .playbook-list button, .source-card, .integration-card, .step-list article, .event-list article { background: #fff; border-color: var(--product-border); }
+.admin-card:hover, .connection-row:hover, .run-row:hover, .run-row.selected, .playbook-list button:hover { background: #f8faff; border-color: #b7c9e9; }
+.structure-grid article { background: #f8f9fb; }
+.structure-grid strong { color: #2d3440; font-size: 11px; }
+.structure-grid span, .structure-grid small { color: #5d6571; font-size: 10px; }
+.admin-label input, .admin-label select, .filter-input input, .global-search input, .admin-label textarea, .data-search input { color: #252a33; background: #fff; border-color: #ccd3de; }
+.product-dialog { background: #fff; border-color: #c7d2e4; box-shadow: var(--shadow-lg); }
+.product-dialog::backdrop, .navigation-scrim { background: rgba(24,33,51,.38); }
+.product-toast { background: #fff; border-color: #cad3df; box-shadow: var(--shadow-md); }
+.auth-page { background: #f5f5f7; }
+.auth-intro { background: #fff; border-color: var(--product-border); }
+.auth-intro h1 { color: #1d1d1f; }
+.auth-intro p:not(.auth-kicker), .auth-intro ul, .auth-copy, .auth-foot { color: #626a77; }
+.auth-panel { background: #f8f9fb; }
+.auth-panel input { color: #1d1d1f; background: #fff; border-color: #ccd3de; }
+.auth-divider span { color: #4d5562; background: #f8f9fb; }
+.auth-panel-icon { color: var(--accent); background: var(--accent-dim); border: 0; }
+@media (max-width: 950px) {
+  .portal-sidebar { box-shadow: 12px 0 28px rgba(24,33,51,.14); }
+  .mobile-topbar { background: #fff; border-color: var(--product-border); }
+  .portal-main { padding: 28px 22px 48px; }
+}
+@media (max-width: 620px) {
+  .portal-main { padding: 24px 16px 40px; }
+  .portal-header { align-items: flex-start; }
+  .portal-header h1 { font-size: 27px; }
+  .header-actions { width: 100%; }
+  .intelligence-result { padding: 16px; }
+  .overview-workboard .workspace-section, .overview-departments, .workspace-section { padding: 18px; }
+  .metric-strip article, .overview-metrics article { min-height: 104px; padding: 16px; }
 }
 
 /* Connected intelligence keeps the demo workspace familiar while exposing governed project data. */

@@ -12,43 +12,43 @@
 
 :root {
   /* Canvas */
-  --bg:              #060A14;
-  --bg-pattern:      radial-gradient(circle at 1px 1px, rgba(76,110,245,0.055) 1px, transparent 0);
-  --bg-pattern-size: 28px 28px;
+  --bg:              #F5F5F7;
+  --bg-pattern:      none;
+  --bg-pattern-size: auto;
 
   /* Surfaces */
-  --surface:         #0C1220;
-  --surface-raised:  #101929;
-  --surface-elevated:#162035;
-  --surface-high:    #1B2740;
-  --surface2:        #162035; /* alias for backwards compatibility */
+  --surface:         #FFFFFF;
+  --surface-raised:  #F8F9FB;
+  --surface-elevated:#EEF1F6;
+  --surface-high:    #FFFFFF;
+  --surface2:        #EEF1F6; /* alias for backwards compatibility */
 
   /* Borders */
-  --border:          #1A2840;
-  --border-subtle:   #0F1C30;
-  --border-active:   #2D4A7A;
+  --border:          #D9DEE8;
+  --border-subtle:   #E9ECF1;
+  --border-active:   #8DB2FF;
 
   /* Accent */
-  --accent:          #4C6EF5;
-  --accent-hover:    #3B5CE0;
-  --accent-dim:      rgba(76,110,245,0.12);
-  --accent-glow:     rgba(76,110,245,0.22);
-  --secondary:       #7B5CF6;
-  --gradient:        linear-gradient(135deg, #4C6EF5, #7B5CF6);
+  --accent:          #0A63F4;
+  --accent-hover:    #0756D8;
+  --accent-dim:      #EAF2FF;
+  --accent-glow:     rgba(10,99,244,0.18);
+  --secondary:       #0A63F4;
+  --gradient:        #0A63F4;
 
   /* Text */
-  --text:            #E8EFFF;
-  --text-dim:        #91A4C0;
-  --text-muted:      #7A91B2;
+  --text:            #1D1D1F;
+  --text-dim:        #515866;
+  --text-muted:      #626A76;
   --text-on-accent:  #FFFFFF;
 
   /* Semantic */
-  --success:         #0EA371;
-  --success-dim:     rgba(14,163,113,0.1);
-  --warning:         #E8A020;
-  --warning-dim:     rgba(232,160,32,0.1);
-  --error:           #E84040;
-  --error-dim:       rgba(232,64,64,0.1);
+  --success:         #12805C;
+  --success-dim:     #E9F7F1;
+  --warning:         #A65D00;
+  --warning-dim:     #FFF4E5;
+  --error:           #BF363B;
+  --error-dim:       #FFF0F0;
 
   /* Layout */
   --sidebar-w:       220px;
@@ -64,11 +64,11 @@
   --r-full: 9999px;
 
   /* Shadows */
-  --shadow-sm:   0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md:   0 4px 12px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.25);
-  --shadow-lg:   0 8px 24px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25);
+  --shadow-sm:   0 1px 2px rgba(24,33,51,0.05);
+  --shadow-md:   0 4px 12px rgba(24,33,51,0.10), 0 1px 3px rgba(24,33,51,0.05);
+  --shadow-lg:   0 8px 24px rgba(24,33,51,0.14), 0 2px 6px rgba(24,33,51,0.06);
   --shadow-glow: 0 0 0 3px var(--accent-glow);
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.35);
+  --shadow-card: 0 1px 2px rgba(24,33,51,0.06);
 
   /* Easing (Emil Kowalski) */
   --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);
@@ -94,7 +94,7 @@ html {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
