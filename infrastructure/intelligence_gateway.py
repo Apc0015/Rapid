@@ -1,7 +1,9 @@
 """One governed entry point for RAPID intelligence across product surfaces."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import uuid
 from typing import Any, Awaitable, Callable, Optional
 
@@ -152,8 +154,9 @@ class IntelligenceGateway:
         )
         prompt = self._build_evidence_prompt(request.question, request.workspace_view, departments, evidence)
         try:
-            result = await (legacy_executor or self._run_legacy_engine)(
-                prompt, current_user, background_tasks, request.history
+            result = await asyncio.wait_for(
+                (legacy_executor or self._run_legacy_engine)(prompt, current_user, background_tasks, request.history),
+                timeout=self._organization_ai_timeout_seconds(),
             )
             if not self._is_useful_answer(getattr(result, "answer", None)):
                 return self._evidence_fallback(request.question, evidence, request.department, "organization")
@@ -169,6 +172,15 @@ class IntelligenceGateway:
                 scope="organization",
                 evidence=evidence,
                 sources=list(getattr(result, "sources", []) or []),
+            )
+        except TimeoutError:
+            logger.warning("Organization intelligence exceeded the interactive query budget")
+            return self._evidence_fallback(
+                request.question,
+                evidence,
+                request.department,
+                "organization",
+                warning="The AI analysis exceeded the live-query budget. RAPID returned approved records instead.",
             )
         except Exception as error:
             logger.warning("Organization intelligence fell back to scoped evidence: %s", error)
@@ -302,6 +314,14 @@ class IntelligenceGateway:
         )
 
     @staticmethod
+    def _organization_ai_timeout_seconds() -> float:
+        try:
+            configured = float(os.getenv("RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS", "12"))
+        except ValueError:
+            configured = 12.0
+        return min(max(configured, 0.1), 120.0)
+
+    @staticmethod
     def _is_useful_answer(answer: Any) -> bool:
         if not isinstance(answer, str) or not answer.strip():
             return False
@@ -310,21 +330,26 @@ class IntelligenceGateway:
 
     @staticmethod
     def _evidence_fallback(
-        question: str, evidence: list[IntelligenceEvidence], department: Optional[str], scope: str
+        question: str,
+        evidence: list[IntelligenceEvidence],
+        department: Optional[str],
+        scope: str,
+        warning: Optional[str] = None,
     ) -> IntelligenceResponse:
         if evidence:
-            answer = "AI runtime is unavailable. These approved records are most relevant:\n\n"
+            lead = "The live AI analysis did not complete in time. These approved records are most relevant:\n\n" if warning else "AI runtime is unavailable. These approved records are most relevant:\n\n"
+            answer = lead
             answer += "\n".join(f"{item.title}: {item.excerpt}" for item in evidence[:4])
-            warning = "Configure Ollama or OpenRouter for an agent-generated answer."
+            fallback_warning = warning or "Configure Ollama or OpenRouter for an agent-generated answer."
         else:
             suffix = f" for {department.replace('_', ' ')}" if department else ""
             answer = f"No approved evidence matched this question{suffix}. Add or synchronize a permitted data source."
-            warning = "No agent request was completed."
+            fallback_warning = warning or "No agent request was completed."
         return IntelligenceResponse(
             id=f"intelligence_{uuid.uuid4().hex}",
             answer=answer,
             confidence=0.55 if evidence else 0.0,
-            warning=warning,
+            warning=fallback_warning,
             departments=[department] if department else [],
             action="scoped_evidence_fallback",
             mode="scoped_evidence_fallback",

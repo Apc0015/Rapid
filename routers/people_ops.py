@@ -107,8 +107,9 @@ async def resolve_escalation(run_id: str, body: EscalationDecision, current_user
 
 @router.post("/demo-session")
 async def demo_session():
-    """Development-only founder token for the local product walkthrough."""
-    if os.getenv("RAPID_ENV", "development") == "production":
+    """Issue a synthetic-workspace token when a deployment explicitly enables demos."""
+    enabled = os.getenv("RAPID_ENABLE_DEMO", "false").strip().lower() in {"1", "true", "yes"}
+    if os.getenv("RAPID_ENV", "development") == "production" and not enabled:
         raise HTTPException(status_code=404, detail="Not found")
     token = get_jwt_manager().create_access_token("demo_founder", "ceo", ["hr"], extra={"tenant_id": "demo"})
     return {"access_token": token, "token_type": "bearer", "profile": {"name": "Demo Founder", "role": "ceo", "tenant_id": "demo"}}

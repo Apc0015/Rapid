@@ -33,7 +33,8 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        desktop_context = browser.new_context(viewport={"width": 1440, "height": 1000}, bypass_csp=True)
+        desktop = desktop_context.new_page()
         if api_url:
             desktop.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         errors: list[str] = []
@@ -121,7 +122,8 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
 
         token = desktop.evaluate("localStorage.getItem('rapid_people_ops_token')")
         profile = desktop.evaluate("localStorage.getItem('rapid_profile')")
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
+        mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, bypass_csp=True)
+        mobile = mobile_context.new_page()
         if api_url:
             mobile.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         mobile.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
@@ -158,7 +160,8 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert_accessible(mobile, "mobile administration")
         mobile.screenshot(path=str(output / "mobile-admin-users.png"), full_page=True)
 
-        tablet = browser.new_page(viewport={"width": 924, "height": 980})
+        tablet_context = browser.new_context(viewport={"width": 924, "height": 980}, bypass_csp=True)
+        tablet = tablet_context.new_page()
         if api_url:
             tablet.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         tablet.goto(f"{base_url}/login", wait_until="domcontentloaded")

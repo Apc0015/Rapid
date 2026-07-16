@@ -187,10 +187,13 @@ Production compose requires an active `worker` heartbeat. The response includes 
 |---|---|---|---|
 | `JWT_SECRET_KEY` | **Yes** | — | Strong random secret ≥32 chars |
 | `RAPID_ENV` | No | `development` | `production` disables debug mode |
+| `RAPID_ENABLE_DEMO` | No | `false` | Enables synthetic demo sign-in; leave disabled for customer deployments |
+| `RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS` | No | `12` | Max seconds for an interactive organization-wide AI answer before approved-evidence fallback |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter (100+ models) |
 | `ANTHROPIC_API_KEY` | No | — | Claude models |
 | `OPENAI_API_KEY` | No | — | GPT models |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Local Ollama |
+| `OLLAMA_DOCKER_BASE_URL` | No | `http://ollama:11434/v1` | Ollama endpoint used inside Docker Compose |
 | `OLLAMA_MODEL` | No | `llama3.2` | Ollama model to use |
 | `DATABASE_URL` | No | `sqlite:///data/db/rapid.db` | SQLite or PostgreSQL |
 | `RAPID_REQUIRE_JOB_WORKER` | No | `false` | Require a live durable worker in `/health/ready`; enabled by Docker production compose |

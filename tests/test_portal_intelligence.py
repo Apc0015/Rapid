@@ -166,6 +166,30 @@ async def test_gateway_dispatches_project_questions_through_the_shared_contract(
 
 
 @pytest.mark.asyncio
+async def test_gateway_returns_evidence_when_organization_analysis_exceeds_latency_budget(monkeypatch):
+    gateway = get_intelligence_gateway()
+    monkeypatch.setenv("RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS", "0.1")
+
+    async def evidence(*_args, **_kwargs):
+        return []
+
+    async def slow_executor(*_args, **_kwargs):
+        import asyncio
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(gateway, "_collect_organization_evidence", evidence)
+    response = await gateway.ask(
+        IntelligenceRequest(question="What is the Atlas renewal risk?", department="sales"),
+        {"sub": "ceo", "role": "ceo", "tenant_id": "acme", "depts": []},
+        BackgroundTasks(),
+        legacy_executor=slow_executor,
+    )
+
+    assert response.mode == "scoped_evidence_fallback"
+    assert "live-query budget" in (response.warning or "")
+
+
+@pytest.mark.asyncio
 async def test_gateway_dispatches_portfolio_questions_through_the_shared_contract(monkeypatch):
     gateway = get_intelligence_gateway()
 

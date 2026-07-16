@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { clearSession, getProfile, getToken, saveSession } from './api';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearSession, getApiBaseUrl, getProfile, getToken, saveSession } from './api';
 
 describe('browser session storage', () => {
   beforeEach(() => localStorage.clear());
+  afterEach(() => vi.unstubAllEnvs());
 
   it('stores and clears the tenant session as one operation', () => {
     saveSession('token-value', { name: 'Maya Chen', role: 'ceo', tenant_id: 'demo' });
@@ -16,5 +17,10 @@ describe('browser session storage', () => {
   it('does not crash on malformed profile storage', () => {
     localStorage.setItem('rapid_profile', '{bad json');
     expect(getProfile()).toEqual({});
+  });
+
+  it('uses the same-origin API through the production product shell', () => {
+    vi.stubEnv('DEV', false);
+    expect(getApiBaseUrl()).toBe(`${window.location.origin}/api`);
   });
 });

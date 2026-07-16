@@ -35,6 +35,8 @@ services:
       - "8000"
     environment:
       RAPID_ENV: production
+      RAPID_ENABLE_DEMO: ${RAPID_ENABLE_DEMO:-false}
+      RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS: ${RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS:-12}
       # JWT_SECRET_KEY has no default — set it before running:
       #   export JWT_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set — see README.md}
@@ -43,7 +45,7 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://ollama:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       DATABASE_URL: ${DATABASE_URL:-sqlite:///data/db/rapid.db}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,http://localhost:80}
@@ -82,7 +84,7 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://ollama:11434/v1}
       RAPID_JOB_DB_PATH: data/db/jobs.db
       USE_QDRANT: ${USE_QDRANT:-false}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
@@ -94,6 +96,12 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "from infrastructure.job_queue import get_job_queue; import sys; sys.exit(0 if get_job_queue().worker_status()['status'] == 'ready' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - rapid-network
     restart: unless-stopped
@@ -108,7 +116,7 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5
