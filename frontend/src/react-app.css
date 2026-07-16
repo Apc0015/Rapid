@@ -291,6 +291,9 @@ body, .product-page, .auth-page { background: var(--bg); color: var(--text); }
 .intelligence-prompt input::placeholder { color: #737b88; }
 .intelligence-submit { width: 36px; height: 36px; flex-basis: 36px; border-radius: 7px; }
 .intelligence-result { padding: 17px 20px 18px 61px; border-color: var(--product-border); }
+.intelligence-suggestions { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 15px 13px 61px; }
+.intelligence-suggestions button { min-height: 28px; padding: 5px 9px; color: #4e5c70; background: #f7f9fc; border: 1px solid #dde3ec; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.25; }
+.intelligence-suggestions button:hover { color: #1f5ebc; background: #f1f6ff; border-color: #b9d0f5; }
 .intelligence-evidence summary, .text-button, .section-title > a.text-button { color: var(--accent); }
 .intelligence-evidence summary:hover, .text-button:hover, .section-title > a.text-button:hover { color: var(--accent-hover); }
 .intelligence-warning { color: #8f5707; }
@@ -364,6 +367,7 @@ body, .product-page, .auth-page { background: var(--bg); color: var(--text); }
   .portal-header { align-items: flex-start; }
   .portal-header h1 { font-size: 27px; }
   .header-actions { width: 100%; }
+  .intelligence-suggestions { padding: 0 14px 13px; }
   .intelligence-result { padding: 16px; }
   .overview-workboard .workspace-section, .overview-departments, .workspace-section { padding: 18px; }
   .metric-strip article, .overview-metrics article { min-height: 104px; padding: 16px; }

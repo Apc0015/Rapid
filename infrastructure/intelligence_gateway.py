@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import uuid
 from typing import Any, Awaitable, Callable, Optional
 
@@ -148,6 +149,8 @@ class IntelligenceGateway:
         legacy_executor: LegacyExecutor | None,
     ) -> IntelligenceResponse:
         tenant_id = str(current_user.get("tenant_id") or "default")
+        if self._is_workspace_brief_request(request):
+            return self._workspace_brief(tenant_id, request.workspace_view or "overview")
         departments = [request.department] if request.department else sorted(allowed)
         evidence = await self._collect_organization_evidence(
             tenant_id, request.question, departments, self.allowed_classifications(current_user)
@@ -185,6 +188,108 @@ class IntelligenceGateway:
         except Exception as error:
             logger.warning("Organization intelligence fell back to scoped evidence: %s", error)
             return self._evidence_fallback(request.question, evidence, request.department, "organization")
+
+    @staticmethod
+    def _is_workspace_brief_request(request: IntelligenceRequest) -> bool:
+        """Keep operational orientation fast and deterministic instead of invoking deep analysis."""
+        if request.department or request.project_id or request.workspace_view not in {
+            "overview", "meetings", "actions", "people", "crm", "projects", "tickets", "departments", "notifications",
+        }:
+            return False
+        normalized = " ".join(re.findall(r"[a-z0-9]+", request.question.lower()))
+        phrases = (
+            "tell me about", "organization overview", "company overview", "give me an overview",
+            "summarize this", "what needs attention", "what should i focus", "what is happening",
+        )
+        return normalized in {"organization", "company", "overview", "summary"} or any(phrase in normalized for phrase in phrases)
+
+    def _workspace_brief(self, tenant_id: str, workspace_view: str) -> IntelligenceResponse:
+        """Return a page-specific operating brief from approved workspace data without an LLM round trip."""
+        workspace = get_demo_workspace_store()
+        overview = workspace.overview(tenant_id)
+        organization = overview["organization"]
+        actions = [item for item in overview["actions"] if item["status"] != "done"]
+        scheduled_meetings = [item for item in overview["meetings"] if item["status"] == "scheduled"]
+
+        def evidence(kind: str, title: str, excerpt: str, department: str | None = None) -> IntelligenceEvidence:
+            return IntelligenceEvidence(kind=kind, title=title, excerpt=excerpt, department=department)
+
+        if workspace_view == "actions":
+            priority = sorted(actions, key=lambda item: (item["priority"] != "high", item["due_date"]))
+            records = [evidence("workspace_record", item["title"], f"{item['status'].replace('_', ' ')} · {item['owner']} · due {item['due_date'][:10]}", item["department"]) for item in priority[:3]]
+            answer = f"{len(actions)} open commitments need follow-through. Start with {priority[0]['title']} owned by {priority[0]['owner']}." if priority else "There are no open commitments."
+            departments = sorted({item["department"] for item in priority})
+        elif workspace_view == "meetings":
+            records = [evidence("workspace_record", item["title"], f"{item['meeting_type']} · {item['starts_at'][:16].replace('T', ' ')} · {item['recurrence']}", item["department"] or None) for item in scheduled_meetings[:3]]
+            answer = f"{len(scheduled_meetings)} upcoming meetings set the operating cadence. The next decision forum is {scheduled_meetings[0]['title']}." if scheduled_meetings else "No upcoming meetings are scheduled."
+            departments = sorted({item["department"] for item in scheduled_meetings if item["department"]})
+        elif workspace_view == "crm":
+            customers = workspace.list_entities(tenant_id, "customer")
+            at_risk = [item for item in customers if item["data"].get("health") == "at_risk"]
+            records = [evidence("workspace_record", item["name"], f"{item['data'].get('health', 'unknown')} health · renewal {item['data'].get('renewal', 'unconfirmed')} · ARR {item['data'].get('arr', 'unconfirmed')}", item["department"]) for item in (at_risk or customers)[:3]]
+            answer = f"{len(customers)} customer records are connected. {at_risk[0]['name']} is the current account requiring recovery attention." if at_risk else f"{len(customers)} customer records are connected and no account is currently marked at risk."
+            departments = ["customer_success"]
+        elif workspace_view == "people":
+            employees = workspace.list_entities(tenant_id, "employee")
+            leaders = [item for item in employees if item["data"].get("manager") == "Maya Chen"]
+            records = [evidence("workspace_record", item["name"], str(item["data"].get("title", "Organization member")), item["department"]) for item in leaders[:4]]
+            answer = f"{organization['name']} has {organization['employee_count']} people across {overview['metrics']['departments']} departments. The operating leadership team is represented across the connected directory."
+            departments = sorted({item["department"] for item in leaders})
+        elif workspace_view == "projects":
+            projects = workspace.list_entities(tenant_id, "project")
+            at_risk = [item for item in projects if item["data"].get("status") == "at_risk"]
+            records = [evidence("workspace_record", item["name"], f"{item['data'].get('status', 'unknown').replace('_', ' ')} · owner {item['data'].get('owner', 'unassigned')} · target {item['data'].get('target', 'unconfirmed')}", item["department"]) for item in (at_risk or projects)[:3]]
+            answer = f"{len(projects)} active initiatives are tracked. {at_risk[0]['name']} needs delivery attention before its target date." if at_risk else f"{len(projects)} active initiatives are tracked and no project is marked at risk."
+            departments = sorted({item["department"] for item in projects})
+        elif workspace_view == "tickets":
+            tickets = workspace.list_entities(tenant_id, "ticket")
+            urgent = [item for item in tickets if item["data"].get("priority") == "high"]
+            records = [evidence("workspace_record", item["name"], f"{item['data'].get('priority', 'normal')} priority · {item['data'].get('status', 'open')} · {item['data'].get('owner', 'unassigned')}", item["department"]) for item in (urgent or tickets)[:3]]
+            answer = f"{len(tickets)} active service issues are tracked. {urgent[0]['name']} is the highest-priority issue needing attention." if urgent else f"{len(tickets)} active service issues are tracked."
+            departments = sorted({item["department"] for item in tickets})
+        elif workspace_view == "departments":
+            attention = [item for item in overview["departments"] if item["status"] == "attention"]
+            records = [evidence("workspace_record", item["name"], f"Lead: {item['lead']} · {item['open_actions']} open actions", item["key"]) for item in attention[:3]]
+            names = ", ".join(item["name"] for item in attention)
+            answer = f"All {overview['metrics']['departments']} department teams are active. Current operating attention is concentrated in {names}." if attention else "All department teams are operating on track."
+            departments = [item["key"] for item in attention]
+        elif workspace_view == "notifications":
+            notifications = workspace.list_notifications(tenant_id, include_read=False)
+            records = [evidence("workspace_record", item["title"], item["message"]) for item in notifications[:3]]
+            answer = f"{len(notifications)} unread operating signals need awareness. The most urgent is {notifications[0]['title']}." if notifications else "There are no unread operating signals."
+            departments = []
+        else:
+            attention = [item for item in overview["departments"] if item["status"] == "attention"]
+            priority = sorted(actions, key=lambda item: (item["priority"] != "high", item["due_date"]))
+            records = [
+                evidence("workspace_record", item["title"], f"{item['priority']} priority · {item['owner']} · due {item['due_date'][:10]}", item["department"])
+                for item in priority[:2]
+            ] + [
+                evidence("workspace_record", item["title"], f"{item['meeting_type']} · {item['starts_at'][:16].replace('T', ' ')}", item["department"] or None)
+                for item in scheduled_meetings[:1]
+            ]
+            focus = ", ".join(item["name"] for item in attention) or "no department is currently marked for attention"
+            answer = (
+                f"{organization['name']} is a {organization['industry']} organization headquartered in {organization['headquarters']}. "
+                f"It has {organization['employee_count']} people across {overview['metrics']['departments']} departments, "
+                f"{overview['metrics']['open_actions']} open commitments, and {overview['metrics']['upcoming_meetings']} upcoming meetings. "
+                f"Current focus: {focus}."
+            )
+            departments = [item["key"] for item in attention]
+
+        return IntelligenceResponse(
+            id=f"brief_{uuid.uuid4().hex}",
+            answer=answer,
+            confidence=0.94,
+            departments=departments,
+            action="workspace_brief",
+            mode="workspace_brief",
+            scope=f"workspace:{workspace_view}",
+            evidence=records,
+            sources=[item.title for item in records],
+            agent="OperatingBrief",
+            duration_ms=0,
+        )
 
     async def _ask_project(
         self, request: IntelligenceRequest, current_user: dict[str, Any], allowed: set[str]

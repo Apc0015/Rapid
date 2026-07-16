@@ -190,6 +190,36 @@ async def test_gateway_returns_evidence_when_organization_analysis_exceeds_laten
 
 
 @pytest.mark.asyncio
+async def test_gateway_returns_a_page_specific_operating_brief_without_invoking_deep_analysis(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAPID_WORKSPACE_DB_PATH", str(tmp_path / "workspace.db"))
+    gateway = get_intelligence_gateway()
+
+    async def should_not_run(*_args, **_kwargs):
+        raise AssertionError("General workspace orientation must not invoke deep analysis")
+
+    overview = await gateway.ask(
+        IntelligenceRequest(question="Tell me about the organization", workspace_view="overview"),
+        {"sub": "ceo", "role": "ceo", "tenant_id": "acme", "depts": []},
+        BackgroundTasks(),
+        legacy_executor=should_not_run,
+    )
+    actions = await gateway.ask(
+        IntelligenceRequest(question="What needs attention today?", workspace_view="actions"),
+        {"sub": "ceo", "role": "ceo", "tenant_id": "acme", "depts": []},
+        BackgroundTasks(),
+        legacy_executor=should_not_run,
+    )
+
+    assert overview.mode == "workspace_brief"
+    assert overview.scope == "workspace:overview"
+    assert "Northstar Labs" in overview.answer
+    assert "live-query budget" not in (overview.warning or "")
+    assert actions.mode == "workspace_brief"
+    assert actions.scope == "workspace:actions"
+    assert "open commitments" in actions.answer
+
+
+@pytest.mark.asyncio
 async def test_gateway_dispatches_portfolio_questions_through_the_shared_contract(monkeypatch):
     gateway = get_intelligence_gateway()
 

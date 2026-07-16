@@ -50,10 +50,23 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert desktop.locator("#organization-name").inner_text() == "Northstar Labs"
         assert desktop.locator(".portal-nav [data-view]").count() == 12
         assert desktop.locator("#root").get_attribute("data-reactroot") is None
-        desktop.fill("#intelligence-question", "What is the Atlas renewal risk?")
+        desktop.fill("#intelligence-question", "Tell me about the organization")
         desktop.click(".intelligence-submit")
         desktop.wait_for_selector(".intelligence-response")
-        assert "atlas" in desktop.locator(".intelligence-response").inner_text().lower()
+        organization_brief = desktop.locator(".intelligence-response").inner_text().lower()
+        assert "northstar labs" in organization_brief
+        assert "live ai analysis" not in organization_brief
+        desktop.click('.portal-nav [data-view="actions"]')
+        desktop.wait_for_function(
+            "document.querySelector('#intelligence-question')?.getAttribute('placeholder') === 'Ask about commitments and owners'"
+        )
+        assert desktop.locator(".intelligence-response").count() == 0
+        assert desktop.locator("#intelligence-question").get_attribute("placeholder") == "Ask about commitments and owners"
+        desktop.fill("#intelligence-question", "What needs attention today?")
+        desktop.click(".intelligence-submit")
+        desktop.wait_for_selector(".intelligence-response")
+        assert "open commitments" in desktop.locator(".intelligence-response").inner_text().lower()
+        desktop.click('.portal-nav [data-view="overview"]')
         assert_accessible(desktop, "workspace overview")
         desktop.screenshot(path=str(output / "desktop-overview.png"), full_page=True)
 

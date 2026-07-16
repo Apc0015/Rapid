@@ -53,6 +53,10 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
   ] },
 ];
 
+const intelligenceViews = new Set<WorkspaceView>([
+  'overview', 'meetings', 'actions', 'people', 'crm', 'projects', 'tickets', 'departments', 'notifications',
+]);
+
 interface WorkspaceShellProps {
   overview: WorkspaceOverview;
   view: WorkspaceView;
@@ -134,7 +138,7 @@ export function WorkspaceShell({
             {primaryLabel ? <button id="primary-action" className="product-button primary" type="button" onClick={onPrimaryAction}>{primaryLabel}</button> : null}
           </div>
         </header>
-        <IntelligenceDock view={view} />
+        {intelligenceViews.has(view) ? <IntelligenceDock key={view} view={view} /> : null}
         {children}
       </main>
       {navigationOpen ? <button className="navigation-scrim" type="button" aria-label="Close navigation" onClick={() => onNavigationOpen(false)} /> : null}

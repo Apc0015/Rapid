@@ -165,7 +165,7 @@ export interface IntelligenceAnswer {
   departments: string[];
   action: string;
   provider?: string | null;
-  mode: 'organization_agent' | 'project_agent' | 'portfolio_agent' | 'scoped_evidence_fallback';
+  mode: 'organization_agent' | 'project_agent' | 'portfolio_agent' | 'scoped_evidence_fallback' | 'workspace_brief';
   evidence: IntelligenceEvidence[];
   scope?: string;
   sources?: string[];
