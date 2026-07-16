@@ -14,6 +14,18 @@ def test_admin_configuration_defaults_to_ollama_and_sandbox(tmp_path):
     assert sandbox["status"] == "sandbox_ready"
 
 
+def test_feature_manifest_is_tenant_scoped_and_exposes_no_configuration_secrets(tmp_path):
+    store = TenantAdminStore(str(tmp_path / "admin.db"))
+    store.update_feature("northstar", "crm", False)
+
+    manifest = store.feature_manifest("northstar")
+    other_manifest = store.feature_manifest("other")
+
+    assert next(item for item in manifest if item["key"] == "crm") == {"key": "crm", "enabled": False}
+    assert next(item for item in other_manifest if item["key"] == "crm") == {"key": "crm", "enabled": True}
+    assert all(set(item) == {"key", "enabled"} for item in manifest)
+
+
 def test_openrouter_requires_a_credential_reference_when_enabled(tmp_path):
     store = TenantAdminStore(str(tmp_path / "admin.db"))
     try:

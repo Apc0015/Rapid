@@ -124,6 +124,20 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert desktop.locator("#connections-list .connection-row").count() >= 4
         assert_accessible(desktop, "tenant configuration")
         desktop.screenshot(path=str(output / "desktop-admin.png"), full_page=True)
+        crm_feature = desktop.locator('[data-feature="crm"]')
+        assert crm_feature.is_checked()
+        crm_feature.click()
+        desktop.wait_for_function("document.querySelector('[data-feature=\"crm\"]')?.checked === false")
+        desktop.goto(f"{base_url}/workspace/crm", wait_until="domcontentloaded")
+        desktop.wait_for_function("window.location.pathname === '/workspace/overview'")
+        desktop.wait_for_selector("#organization-name")
+        assert desktop.locator('.portal-nav [data-view="crm"]').count() == 0
+        desktop.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
+        desktop.wait_for_selector('[data-feature="crm"]')
+        crm_feature = desktop.locator('[data-feature="crm"]')
+        if not crm_feature.is_checked():
+            crm_feature.click()
+            desktop.wait_for_function("document.querySelector('[data-feature=\"crm\"]')?.checked === true")
 
         desktop.goto(f"{base_url}/operations", wait_until="domcontentloaded")
         desktop.wait_for_selector(".department-tabs button")

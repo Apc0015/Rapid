@@ -47,3 +47,17 @@ export const VIEW_META: Record<WorkspaceView, { context: string; title: string; 
 
 export const isWorkspaceView = (value?: string): value is WorkspaceView =>
   WORKSPACE_VIEWS.includes(value as WorkspaceView);
+
+export const VIEW_FEATURES: Partial<Record<WorkspaceView, string>> = {
+  meetings: 'meetings',
+  actions: 'workflows',
+  people: 'people',
+  crm: 'crm',
+  projects: 'projects',
+  tickets: 'tickets',
+  departments: 'people',
+  reports: 'reports',
+  library: 'knowledge',
+  search: 'knowledge',
+  notifications: 'workflows',
+};

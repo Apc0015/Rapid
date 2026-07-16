@@ -115,6 +115,11 @@ export interface TenantConfiguration {
   connections: ConnectionConfiguration[];
 }
 
+export interface TenantFeature {
+  key: string;
+  enabled: boolean;
+}
+
 export interface Readiness {
   status: string;
   checks: Record<string, { status: string }>;
@@ -138,6 +143,7 @@ export interface WorkspaceData {
   records: BusinessRecord[];
   notifications: NotificationItem[];
   configuration: TenantConfiguration | null;
+  features: TenantFeature[];
   readiness: Readiness | null;
   jobs: JobsResponse | null;
 }

@@ -46,48 +46,49 @@ logger = logging.getLogger("rapid.actions")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_project_db(project_id: str) -> str:
-    """Return the SQLite DB path for a project, or raise 404."""
-    pp = get_project_provisioner()
+def _get_accessible_project(project_id: str, current_user: dict) -> dict:
+    """Resolve a project only after enforcing the caller's tenant and membership scope."""
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
-            "SELECT db_path FROM project_registry WHERE project_id=?",
+            "SELECT project_id, tenant_id, db_path FROM project_registry WHERE project_id=?",
             (project_id,),
         ).fetchone()
+        if not row or row["tenant_id"] != _current_tenant(current_user):
+            raise HTTPException(status_code=404, detail="Project not found")
+        if current_user.get("role") not in {"admin", "ceo"}:
+            membership = conn.execute(
+                """SELECT 1 FROM project_members
+                   WHERE project_id=? AND tenant_id=? AND user_id=? AND status='active'""",
+                (project_id, row["tenant_id"], current_user["sub"]),
+            ).fetchone()
+            if not membership:
+                raise HTTPException(status_code=403, detail="You are not a member of this project")
     finally:
         conn.close()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
-    return row["db_path"]
+    return dict(row)
 
 
-def _get_tenant_id(project_id: str) -> str:
-    """Return tenant_id for a project."""
+def _all_active_projects(current_user: dict) -> list[dict]:
+    """Return only active projects visible to the authenticated user."""
+    tenant_id = _current_tenant(current_user)
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute(
-            "SELECT tenant_id FROM project_registry WHERE project_id=?",
-            (project_id,),
-        ).fetchone()
-    finally:
-        conn.close()
-    return row["tenant_id"] if row else "default"
-
-
-def _all_active_projects(tenant_id: str) -> list[dict]:
-    """Return active projects for exactly one authenticated tenant."""
-    conn = sqlite3.connect(config.DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            """SELECT project_id, tenant_id, db_path FROM project_registry
-               WHERE status != 'archived' AND tenant_id=?""",
-            (tenant_id,),
-        ).fetchall()
+        if current_user.get("role") in {"admin", "ceo"}:
+            rows = conn.execute(
+                """SELECT project_id, tenant_id, db_path FROM project_registry
+                   WHERE status != 'archived' AND tenant_id=?""",
+                (tenant_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT pr.project_id, pr.tenant_id, pr.db_path FROM project_registry pr
+                   JOIN project_members pm ON pm.project_id=pr.project_id AND pm.tenant_id=pr.tenant_id
+                   WHERE pr.status != 'archived' AND pr.tenant_id=? AND pm.user_id=? AND pm.status='active'""",
+                (tenant_id, current_user["sub"]),
+            ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -126,7 +127,7 @@ async def get_action_stats(
 
     Returns total counts by status and category.
     """
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     merged_by_status: dict[str, int] = {}
     merged_by_cat:    dict[str, int] = {}
     total = 0
@@ -166,7 +167,7 @@ async def list_actions(
     """
     effective_status = status if status is not None else ActionStatus.PENDING
 
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     all_actions = []
 
     for proj in projects:
@@ -199,7 +200,7 @@ async def get_action(
     """
     Fetch a single action by ID (searches across all active project DBs).
     """
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     for proj in projects:
         try:
             aq = get_action_queue(proj["db_path"], proj["project_id"], proj["tenant_id"])
@@ -225,7 +226,7 @@ async def approve_action(
     """
     _require_action_reviewer(current_user)
     user_id  = current_user["sub"]
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
 
     for proj in projects:
         try:
@@ -265,7 +266,7 @@ async def reject_action(
     """
     _require_action_reviewer(current_user)
     user_id  = current_user["sub"]
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
 
     for proj in projects:
         try:
@@ -301,7 +302,7 @@ async def notification_count(
     current_user: dict = Depends(get_current_user),
 ):
     """Fast unread notification count across all projects."""
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     total = 0
     for proj in projects:
         try:
@@ -318,7 +319,7 @@ async def list_notifications(
     current_user: dict = Depends(get_current_user),
 ):
     """List all unread (not dismissed) notifications across all active projects."""
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     all_notifs = []
 
     for proj in projects:
@@ -344,7 +345,7 @@ async def list_all_notifications(
     current_user: dict = Depends(get_current_user),
 ):
     """List all notifications (read + unread) with optional filters."""
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
     all_notifs = []
 
     for proj in projects:
@@ -370,7 +371,7 @@ async def mark_notification_read(
 ):
     """Mark a notification as read by the current user."""
     user_id  = current_user["sub"]
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
 
     for proj in projects:
         try:
@@ -406,7 +407,7 @@ async def dismiss_notification(
     current_user: dict = Depends(get_current_user),
 ):
     """Dismiss a notification (hide from unread list)."""
-    projects = _all_active_projects(_current_tenant(current_user))
+    projects = _all_active_projects(current_user)
 
     for proj in projects:
         try:
@@ -448,8 +449,9 @@ async def project_monitoring_status(
     Return the current BackgroundMonitor status plus project-specific
     unread notification and pending action counts.
     """
-    db_path   = _get_project_db(project_id)
-    tenant_id = _get_tenant_id(project_id)
+    project = _get_accessible_project(project_id, current_user)
+    db_path = project["db_path"]
+    tenant_id = project["tenant_id"]
 
     # Get monitor global status
     try:
@@ -492,8 +494,9 @@ async def list_project_actions(
     current_user: dict = Depends(get_current_user),
 ):
     """List action queue entries for a specific project."""
-    db_path   = _get_project_db(project_id)
-    tenant_id = _get_tenant_id(project_id)
+    project = _get_accessible_project(project_id, current_user)
+    db_path = project["db_path"]
+    tenant_id = project["tenant_id"]
 
     aq      = get_action_queue(db_path, project_id, tenant_id)
     actions = aq.list_all(status=status, limit=limit)
@@ -513,8 +516,9 @@ async def list_project_notifications(
     current_user: dict = Depends(get_current_user),
 ):
     """List notifications for a specific project."""
-    db_path   = _get_project_db(project_id)
-    tenant_id = _get_tenant_id(project_id)
+    project = _get_accessible_project(project_id, current_user)
+    db_path = project["db_path"]
+    tenant_id = project["tenant_id"]
 
     ne = get_notification_engine(db_path, project_id, tenant_id)
 

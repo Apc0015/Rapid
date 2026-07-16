@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS users (
     project_access        TEXT    DEFAULT '{}',
     db_mode_enabled       INTEGER DEFAULT 0,
     division              TEXT    DEFAULT '',
+    tenant_id             TEXT    DEFAULT 'default',
     created_at            TEXT    DEFAULT '',
     created_by            TEXT    DEFAULT ''
 );
@@ -180,6 +181,9 @@ def _db_connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(_USER_DB_SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "tenant_id" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT DEFAULT 'default'")
     conn.commit()
     return conn
 
@@ -206,8 +210,8 @@ def _db_upsert_user(conn: sqlite3.Connection, login_key: str, data: dict) -> Non
         """INSERT OR REPLACE INTO users
            (login_key, name, role, department, email, employee_id,
             rapid_user_id, password_hash, permitted_departments,
-            project_access, db_mode_enabled, division, created_at, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            project_access, db_mode_enabled, division, tenant_id, created_at, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             login_key,
             data.get("name", ""),
@@ -221,6 +225,7 @@ def _db_upsert_user(conn: sqlite3.Connection, login_key: str, data: dict) -> Non
             json.dumps(data.get("project_access", {})),
             int(bool(data.get("db_mode_enabled", False))),
             data.get("division", ""),
+            data.get("tenant_id", "default"),
             data.get("created_at", ""),
             data.get("created_by", ""),
         ),

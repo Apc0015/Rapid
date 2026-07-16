@@ -112,6 +112,7 @@ async def login(request: Request, body: LoginRequest):
         "name":                  user.get("name", body.user_id),
         "role":                  role,
         "email":                 user.get("email", ""),
+        "tenant_id":             user.get("tenant_id", "default"),
         "rapid_user_id":         user.get("rapid_user_id", ""),
         "permitted_departments": permitted_depts,
         "db_mode_enabled":       user.get("db_mode_enabled", False),

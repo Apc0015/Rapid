@@ -48,6 +48,12 @@ async def configuration(current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)
     return get_tenant_admin_store().configuration(_tenant(current_user))
 
+
+@router.get("/features")
+async def feature_manifest(current_user: dict = Depends(get_current_user)):
+    """Expose product visibility to authenticated users without disclosing tenant configuration."""
+    return {"features": get_tenant_admin_store().feature_manifest(_tenant(current_user))}
+
 @router.put("/features/{feature_key}")
 async def update_feature(feature_key: str, body: FeatureRequest, current_user: dict = Depends(get_current_user)):
     _require_admin(current_user)

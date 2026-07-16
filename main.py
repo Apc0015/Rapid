@@ -481,8 +481,17 @@ async def ask(
     # roles (and users with no dept restriction) search everything indexed.
     # Indexes are tenant-scoped on disk: data/faiss/{tenant}/{dept}.
     tenant_id = current_user.get("tenant_id", "default")
-    faiss_root = Path("data/faiss") / tenant_id
-    indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
+    # The RAG pipeline resolves BM25 and vector stores through this tenant context.
+    # Bind it before routing so legacy /ask cannot fall back to default-tenant data.
+    from infrastructure.db_master import set_current_tenant
+    set_current_tenant(tenant_id)
+    use_qdrant = os.getenv("USE_QDRANT", "").lower() in {"true", "1", "yes"}
+    if use_qdrant:
+        from infrastructure.people_ops_store import DEPARTMENTS
+        indexed = sorted(DEPARTMENTS)
+    else:
+        faiss_root = Path("data/faiss") / tenant_id
+        indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
     role  = current_user.get("role", "employee")
     depts = current_user.get("depts") or []
     if role in ("admin", "ceo", "board_member") or not depts:
@@ -505,7 +514,7 @@ async def ask(
         if model not in emb_cache:
             emb_cache[model] = await embedder.embed(req.query, model=model)
         idx = get_dept_index(d, dim=embedder.dim_for_model(model), tenant_id=tenant_id)
-        if idx.doc_count == 0:
+        if not use_qdrant and idx.doc_count == 0:
             continue
         hits = await idx.vector_search(emb_cache[model], top_k=1)
         if hits and hits[0][1] > best_score:

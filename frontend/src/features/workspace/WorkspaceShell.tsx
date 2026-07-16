@@ -21,10 +21,10 @@ import {
 } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { VIEW_META, type WorkspaceView } from '../../constants';
+import { VIEW_FEATURES, VIEW_META, type WorkspaceView } from '../../constants';
 import { IntelligenceDock } from '../intelligence/IntelligenceDock';
 import { initials } from '../../lib/format';
-import type { WorkspaceOverview } from '../../types';
+import type { TenantFeature, WorkspaceOverview } from '../../types';
 
 interface NavItem {
   view: WorkspaceView;
@@ -61,6 +61,7 @@ interface WorkspaceShellProps {
   overview: WorkspaceOverview;
   view: WorkspaceView;
   notificationCount: number;
+  features: TenantFeature[];
   navigationOpen: boolean;
   onNavigate: (view: WorkspaceView) => void;
   onNavigationOpen: (open: boolean) => void;
@@ -74,6 +75,7 @@ export function WorkspaceShell({
   overview,
   view,
   notificationCount,
+  features,
   navigationOpen,
   onNavigate,
   onNavigationOpen,
@@ -98,10 +100,12 @@ export function WorkspaceShell({
           <ChevronRight size={13} aria-hidden="true" />
         </div>
         <nav className="product-nav portal-nav" aria-label="Product navigation">
-          {groups.map((group) => (
-            <div className="nav-group" key={group.label}>
+          {groups.map((group) => {
+            const items = group.items.filter((item) => isViewEnabled(item.view, features));
+            if (!items.length) return null;
+            return <div className="nav-group" key={group.label}>
               <p className="nav-group-label">{group.label}</p>
-              {group.items.map(({ view: itemView, label, icon: Icon }) => (
+              {items.map(({ view: itemView, label, icon: Icon }) => (
                 <button
                   key={itemView}
                   type="button"
@@ -114,8 +118,8 @@ export function WorkspaceShell({
                   {itemView === 'notifications' && notificationCount > 0 ? <b id="notification-count">{notificationCount}</b> : null}
                 </button>
               ))}
-            </div>
-          ))}
+            </div>;
+          })}
         </nav>
         <div className="product-sidebar-footer">
           <Link to="/operations"><ShieldCheck size={14} aria-hidden="true" /> Operations console</Link>
@@ -144,4 +148,9 @@ export function WorkspaceShell({
       {navigationOpen ? <button className="navigation-scrim" type="button" aria-label="Close navigation" onClick={() => onNavigationOpen(false)} /> : null}
     </div>
   );
+}
+
+function isViewEnabled(view: WorkspaceView, features: TenantFeature[]): boolean {
+  const requiredFeature = VIEW_FEATURES[view];
+  return !requiredFeature || features.some((feature) => feature.key === requiredFeature && feature.enabled);
 }

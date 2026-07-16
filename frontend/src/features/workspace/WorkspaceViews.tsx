@@ -46,7 +46,7 @@ function countLabel(count: number, noun: string): string {
 }
 
 function SegmentedControl({ value, options, onChange, id }: { value: string; options: Array<[string, string]>; onChange: (value: string) => void; id?: string }) {
-  return <div className="segmented-control" id={id}>{options.map(([key, label]) => <button key={key} className={value === key ? 'active' : ''} type="button" data-status={key} data-type={key} data-priority={key} onClick={() => onChange(key)}>{label}</button>)}</div>;
+  return <div className="segmented-control" id={id} role="group" aria-label="Filter options">{options.map(([key, label]) => <button key={key} className={value === key ? 'active' : ''} type="button" aria-pressed={value === key} data-status={key} data-type={key} data-priority={key} onClick={() => onChange(key)}>{label}</button>)}</div>;
 }
 
 export function MeetingList({ meetings, onOpen, expanded = false }: { meetings: Meeting[]; onOpen: (id: string) => void; expanded?: boolean }) {

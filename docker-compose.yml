@@ -61,8 +61,8 @@ services:
       - rapid-data:/app/data
       - rapid-logs:/app/logs
     depends_on:
-      ollama:
-        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -94,8 +94,8 @@ services:
     depends_on:
       rapid:
         condition: service_healthy
-      ollama:
-        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "from infrastructure.job_queue import get_job_queue; import sys; sys.exit(0 if get_job_queue().worker_status()['status'] == 'ready' else 1)"]
       interval: 30s
@@ -106,9 +106,7 @@ services:
       - rapid-network
     restart: unless-stopped
 
-  # ── ollama: local LLM inference (optional) ────────────────────────────────
-  # To pull a model after first start:
-  #   docker exec rapid-ollama-1 ollama pull llama3.2
+  # ── ollama: local LLM inference ───────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -125,9 +123,23 @@ services:
       - rapid-network
     restart: unless-stopped
 
+  # Pull required demo/runtime models once before the API accepts requests.
+  ollama-init:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      OLLAMA_HOST: ollama:11434
+      RAPID_OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+    command: ["ollama pull \"$${RAPID_OLLAMA_MODEL}\" && ollama pull nomic-embed-text"]
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - rapid-network
+    restart: "no"
+
   qdrant:
     image: qdrant/qdrant:v1.14.1
-    profiles: ["qdrant"]
     volumes:
       - qdrant-data:/qdrant/storage
     networks:

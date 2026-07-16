@@ -20,6 +20,8 @@ FEATURES = {
     "reports": "Department reports",
     "projects": "Projects and delivery",
     "people": "People directory",
+    "crm": "Customer operations",
+    "tickets": "Service operations",
 }
 MODEL_PROVIDERS = {"ollama", "openrouter"}
 CONNECTION_KINDS = {"database", "sso", "integration", "storage", "email"}
@@ -150,6 +152,21 @@ class TenantAdminStore:
             conn.execute("UPDATE tenant_features SET enabled=?, updated_at=? WHERE tenant_id=? AND feature_key=?", (int(enabled), self._now(), tenant_id, key))
             conn.commit()
             return {"key": key, "name": FEATURES[key], "enabled": enabled}
+        finally:
+            conn.close()
+
+    def feature_manifest(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return tenant feature visibility without exposing configuration or credentials."""
+        self.ensure_tenant(tenant_id)
+        conn = self._connect()
+        try:
+            return [
+                {"key": row["feature_key"], "enabled": bool(row["enabled"])}
+                for row in conn.execute(
+                    "SELECT feature_key, enabled FROM tenant_features WHERE tenant_id=? ORDER BY feature_key",
+                    (tenant_id,),
+                )
+            ]
         finally:
             conn.close()
 

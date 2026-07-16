@@ -1,5 +1,5 @@
 import { ArrowRightLeft, Database, FileUp, Play, Plus, RefreshCw, Search, ShieldCheck, TimerReset, Workflow } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AdminShell } from '../components/AdminShell';
 import { Modal } from '../components/Modal';
 import { EmptyState, LoadingState, StatusTag } from '../components/StatusTag';
@@ -104,9 +104,10 @@ export function OperationsPage() {
   const [scheduleConnection, setScheduleConnection] = useState<Integration | null>(null);
   const [handoffRun, setHandoffRun] = useState<TaskRun | null>(null);
   const [citations, setCitations] = useState<Citation[]>([]);
+  const departmentRequest = useRef(0);
   const { notify } = useToast();
 
-  const loadDepartment = useCallback(async (department: string, preserveRun = true) => {
+  const loadDepartment = useCallback(async (department: string, preserveRun = true, requestId = ++departmentRequest.current) => {
     if (!department) return;
     const [nextDashboard, nextReport, sourceData, integrationData] = await Promise.all([
       apiRequest<Dashboard>(`/organization/dashboard?department=${encodeURIComponent(department)}`),
@@ -114,9 +115,11 @@ export function OperationsPage() {
       apiRequest<{ sources: DataSource[] }>(`/organization/data/sources?department=${encodeURIComponent(department)}`),
       apiRequest<{ connections: Integration[] }>(`/organization/integrations/connections?department=${encodeURIComponent(department)}`),
     ]);
+    if (requestId !== departmentRequest.current) return;
     setDashboard(nextDashboard); setReport(nextReport); setSources(sourceData.sources); setIntegrations(integrationData.connections);
     if (preserveRun && selectedRun?.playbook.department === department) {
       const detail = await apiRequest<{ run: TaskRun }>(`/organization/runs/${selectedRun.id}`);
+      if (requestId !== departmentRequest.current) return;
       setSelectedRun(detail.run);
     }
   }, [selectedRun]);
@@ -142,10 +145,11 @@ export function OperationsPage() {
   useEffect(() => { void load(); }, []);
 
   async function selectDepartment(department: string) {
+    const requestId = ++departmentRequest.current;
     setActiveDepartment(department); setSelectedRun(null); setCitations([]); setLoading(true);
-    try { await loadDepartment(department, false); }
+    try { await loadDepartment(department, false, requestId); }
     catch (issue) { notify(issue instanceof Error ? issue.message : 'Department workspace could not be loaded.'); }
-    finally { setLoading(false); }
+    finally { if (requestId === departmentRequest.current) setLoading(false); }
   }
 
   async function selectRun(id: string) {
