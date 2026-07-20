@@ -30,43 +30,12 @@ DEPARTMENTS: dict[str, dict[str, Any]] = {
 
 
 PLAYBOOKS: dict[str, dict[str, Any]] = {
-    "onboarding": {
-        "department": "hr",
-        "name": "New hire onboarding",
-        "description": "Prepare a new starter without losing the founder in operational work.",
-        "trigger_types": ["message", "hiring_sheet"],
-        "steps": [
-            ("collect-details", "Collect employment details", "HR Lead", "T0"),
-            ("prepare-offer", "Prepare offer and contract package", "Policy & Docs", "T2"),
-            ("prepare-day-one", "Build day-one schedule", "Onboarding", "T0"),
-            ("send-welcome", "Send welcome and document request", "Onboarding", "T1"),
-            ("create-checklist", "Create access and equipment checklist", "Onboarding", "T0"),
-        ],
-    },
-    "leave": {
-        "department": "hr",
-        "name": "Leave and PTO",
-        "description": "Check policy, record leave, update the calendar, and notify the manager.",
-        "trigger_types": ["message"],
-        "steps": [
-            ("check-policy", "Check leave policy and balance", "Leave & PTO", "T0"),
-            ("record-leave", "Record approved leave", "Leave & PTO", "T0"),
-            ("update-calendar", "Update team calendar", "Leave & PTO", "T0"),
-            ("notify-manager", "Notify the reporting manager", "Leave & PTO", "T1"),
-        ],
-    },
-    "compliance": {
-        "department": "hr",
-        "name": "People compliance calendar",
-        "description": "Prepare renewal and compliance work before it becomes a deadline.",
-        "trigger_types": ["schedule"],
-        "steps": [
-            ("review-deadline", "Review deadline and required evidence", "Compliance Calendar", "T0"),
-            ("prepare-draft", "Prepare document or filing draft", "Policy & Docs", "T0"),
-            ("request-signature", "Request the required signature", "Compliance Calendar", "T2"),
-            ("log-deadline", "Record completion and next review date", "Compliance Calendar", "T0"),
-        ],
-    },
+    # NOTE: hr has no entries here. Onboarding, offboarding, termination, leave,
+    # compliance, and policy Q&A are governed by orgos/departments/hr instead —
+    # a second engine, with real per-step logic and independent verification,
+    # not this store's fixed evidence stub. Routing an hr playbook through here
+    # would create two competing systems of record for the same employee.
+    # See orgos/departments/hr/playbooks.py and routers/hr.py.
     "financial-close": {
         "department": "finance",
         "name": "Monthly financial close",
@@ -103,18 +72,8 @@ PLAYBOOKS: dict[str, dict[str, Any]] = {
             ("send-response", "Send the approved first response", "Deal Desk", "T1"),
         ],
     },
-    "campaign-launch": {
-        "department": "marketing",
-        "name": "Campaign launch operations",
-        "description": "Coordinate approved campaign assets, channel setup, measurement, and launch evidence.",
-        "trigger_types": ["schedule", "message"],
-        "steps": [
-            ("validate-brief", "Validate campaign brief and audience", "Campaign Operations", "T0"),
-            ("prepare-assets", "Prepare approved channel assets", "Content", "T0"),
-            ("configure-measurement", "Configure tracking and measurement", "Analytics", "T0"),
-            ("publish-campaign", "Publish approved campaign", "Campaign Operations", "T1"),
-        ],
-    },
+    # marketing's campaign launch is governed by orgos/departments/marketing's
+    # "campaign_launch" playbook for the same reason hr is absent above.
     "operations-incident": {
         "department": "ops",
         "name": "Operational incident coordination",

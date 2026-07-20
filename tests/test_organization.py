@@ -6,12 +6,26 @@ from routers.deps import get_current_user
 from routers.organization import router
 
 
-def test_all_ten_departments_have_a_governed_playbook(tmp_path):
+def test_hr_and_marketing_have_no_duplicate_playbooks_here(tmp_path):
+    """
+    hr and marketing playbooks live entirely in orgos now (real per-step
+    logic + independent verification) — this store deliberately has none for
+    them, so there is exactly one place to create an hr or marketing run, not
+    two competing ones. See the note atop PLAYBOOKS. Every department is
+    still real and listed in DEPARTMENTS; the other 8 either have no orgos
+    coverage yet (legal, sales, ops, procurement, rd, customer_success) or
+    have playbooks here for scenarios orgos doesn't cover (it's access
+    requests, finance's monthly close) alongside their orgos playbooks.
+    """
     store = PeopleOpsStore(str(tmp_path / "organization.db"))
     playbooks = store.list_playbooks()
 
+    orgos_departments = {"hr", "marketing"}
+    people_ops_departments = {playbook["department"] for playbook in playbooks}
+
     assert len(DEPARTMENTS) == 10
-    assert {playbook["department"] for playbook in playbooks} == set(DEPARTMENTS)
+    assert orgos_departments | people_ops_departments == set(DEPARTMENTS)
+    assert not (orgos_departments & people_ops_departments)
     assert all(playbook["step_count"] >= 4 for playbook in playbooks)
 
 
@@ -45,10 +59,10 @@ def test_department_access_is_enforced_by_organization_api(tmp_path, monkeypatch
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: {
-        "sub": "people_lead", "role": "dept_head", "tenant_id": "acme", "depts": ["hr"],
+        "sub": "legal_lead", "role": "dept_head", "tenant_id": "acme", "depts": ["legal"],
     }
     client = TestClient(app)
 
-    assert client.get("/organization/departments").json()["departments"][0]["key"] == "hr"
+    assert client.get("/organization/departments").json()["departments"][0]["key"] == "legal"
     assert client.post("/organization/runs", json={"playbook_key": "financial-close", "subject_name": "July close"}).status_code == 403
-    assert client.post("/organization/runs", json={"playbook_key": "onboarding", "subject_name": "Priya Shah"}).status_code == 201
+    assert client.post("/organization/runs", json={"playbook_key": "contract-review", "subject_name": "Acme-Northwind MSA"}).status_code == 201

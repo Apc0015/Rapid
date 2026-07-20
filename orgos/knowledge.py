@@ -1,6 +1,6 @@
 """
-orgos/knowledge.py — the bridge from orgos departments to the knowledge half
-of RAPID (the v2 RAG pipeline over data/documents).
+orgos/knowledge.py — the bridge from orgos departments to RAPID's document
+RAG pipeline (pipelines/rag_pipeline.py, over data/documents).
 
 orgos handlers are synchronous; the RAG pipeline is async. ask_knowledge_base
 runs the pipeline on a dedicated event loop in a worker thread, so it works

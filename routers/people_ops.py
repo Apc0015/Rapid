@@ -57,8 +57,10 @@ async def list_runs(status: Optional[str] = None, current_user: dict = Depends(g
 
 @router.post("/runs", status_code=201)
 async def create_run(body: CreateRunRequest, current_user: dict = Depends(get_current_user)):
-    if body.playbook_key != "leave":
-        _require_role(current_user, PRIVILEGED_ROLES)
+    # hr playbooks (including self-serve leave requests) now live in
+    # orgos/departments/hr — see routers/hr.py — so every playbook reachable
+    # here requires a privileged role; there is no self-serve exception left.
+    _require_role(current_user, PRIVILEGED_ROLES)
     try:
         run = get_people_ops_store().create_run(
             tenant_id=_tenant(current_user), created_by=current_user["sub"], playbook_key=body.playbook_key,

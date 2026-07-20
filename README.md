@@ -11,7 +11,11 @@ RAPID starts as a usable synthetic organization demo. An administrator can then 
 **Key capabilities:**
 
 - **Unified workspace** — overview, meetings, actions, people, CRM, projects, tickets, reports, library, notifications, search, and settings
-- **Ten governed department teams** — Finance, People Ops, Legal, Sales, Marketing, Operations, IT, Procurement, R&D, and Customer Success
+- **Ten governed department teams**, on two engines of different depth (see [Two Execution Engines](#two-execution-engines) below):
+  - **HR, IT, Finance, Marketing** — `orgos/`, real per-step specialists, RAG-grounded answers, independent verification against actual recorded state
+  - **Legal, Sales, Operations, Procurement, R&D, Customer Success** — `infrastructure/people_ops_store.py`, a generic sandboxed playbook engine (each step's "evidence" is a fixed stub, not real work) pending a real orgos implementation
+  - IT and Finance additionally have a couple of orgos-uncovered scenarios (generic access requests, monthly financial close) still running on the sandboxed engine alongside their real orgos playbooks
+- **Grounded Q&A** — `/ask`: single-department retrieval + one synthesis call, cited, works on a local model. `/query` and `/intelligence/ask` run the older multi-agent fan-out (many LLM calls); prefer `/ask` unless you specifically need multi-department synthesis with a capable model behind it.
 - **Project intelligence** — isolated project data spaces, scoped queries, skills, generated documents, portfolio analysis, and team membership
 - **Organization knowledge** — document upload, extraction/OCR, PII handling, source sync jobs, permissions, lexical/vector retrieval, and optional Qdrant
 - **Approval controls** — generated outputs are queued for review and cannot be downloaded until approved
@@ -30,6 +34,17 @@ The local synthetic organization is the default product demo and test dataset. C
 
 ---
 
+## Two Execution Engines
+
+RAPID has **one frontend** (the React portal) and **one backend API**, but two department run-engines behind it, at different levels of realism. This is deliberate, not leftover duplication — read this before adding a playbook to either side, so you don't recreate the same department twice:
+
+- **`orgos/`** (`orgos/engine.py`, `orgos/departments/{hr,it,finance,marketing}/`) — the real engine. Every step is a Python handler that does actual work (e.g. HR's policy answers are grounded in retrieved documents; IT's license approval reads the real requested cost to decide auto-approve vs. escalate) and a **separate** verify function that independently re-checks recorded state — a step is never "done" just because its handler said so. Reachable via `routers/{hr,it,finance,marketing}.py` and `orgos/api.py` (`/org/*`).
+- **`infrastructure/people_ops_store.py`** — a generic, department-agnostic playbook engine. Steps execute against a fixed risk tier (T0/T1/T2) and every step's "evidence" is a hardcoded `sandbox_receipt` stub — real for exercising the approve/verify/escalate/handoff *mechanics*, not for real department work. It covers Legal, Sales, Operations, Procurement, R&D, and Customer Success (no orgos implementation exists yet), plus two scenarios orgos doesn't have for IT and Finance. Reachable via `routers/people_ops.py` (`/people-ops/*`) and `routers/organization.py` (`/organization/*`).
+
+**The rule:** a department's real playbooks live in exactly one place. `people_ops_store.PLAYBOOKS` has a comment at the top of each section explaining why hr and marketing have no entries there — those playbooks would collide with the real ones in `orgos/`. If you're building out one of the six remaining departments for real, the pattern to copy is `orgos/departments/it/` (smallest complete example), and the corresponding entry should then be deleted from `people_ops_store.PLAYBOOKS`, the same way hr and marketing were.
+
+---
+
 ## Project Structure
 
 ```
@@ -43,7 +58,15 @@ RAPID/
 ├── nginx/nginx.conf           Serves the SPA and proxies /api/* to FastAPI
 │
 ├── main.py                    FastAPI application, lifespan, middleware, router registration
+├── orgos/                     The real digital-organization engine — see "Two Execution Engines"
+│   ├── engine.py               Trigger → plan → execute → verify → log loop
+│   ├── registry.py             Where departments plug in (playbooks + handlers + verifies)
+│   ├── verifier.py             Independent QA gate — never the handler that ran the step
+│   ├── knowledge.py            Bridge to the RAG pipeline for grounded, cited answers
+│   └── departments/{hr,it,finance,marketing}/  One playbooks/specialists/verifiers module each
 ├── routers/                   Product API boundaries
+│   ├── hr.py / it.py / finance.py / marketing.py   Thin wrappers over orgos/api.py (real engine)
+│   ├── people_ops.py, organization.py              Sandboxed engine — the other 6 departments
 │   ├── workspace.py           Common portal data: overview, meetings, records, notifications
 │   ├── projects.py            Project lifecycle and membership
 │   ├── project_query.py       Project-scoped intelligence
@@ -52,12 +75,13 @@ RAPID/
 │   ├── organization_data.py   Sources, uploads, RAG status, document permissions
 │   ├── tenant_admin.py        Tenant configuration, invitations, entitlements, branding
 │   ├── organization_*.py      Structure, integrations, and organization operations
-│   ├── intelligence.py        Portal intelligence and evidence-aware answers
+│   ├── intelligence.py        Portal intelligence and evidence-aware answers (multi-agent, slow)
 │   └── jobs.py / monitoring.py Durable job visibility, metrics, liveness, readiness
 │
 ├── infrastructure/            Product services and storage adapters
-│   ├── query_service.py       Main governed query pipeline
-│   ├── organization_rag.py    Permission-aware organization retrieval
+│   ├── query_service.py       Multi-agent governed query pipeline (/query, /intelligence/ask)
+│   ├── organization_rag.py    Permission-aware organization retrieval (uses pipelines/rag_pipeline
+│   │                            + the same FAISS store orgos reads/writes — one vector backend)
 │   ├── document_extractor.py  Text extraction, OCR, PII handling
 │   ├── embedding_service.py   Configurable embedding provider
 │   ├── job_queue.py           Durable queue, retries, dead letters, worker heartbeats
@@ -66,6 +90,7 @@ RAPID/
 │   ├── integration_hub.py     Configured provider and connector registry
 │   └── tenant_admin_store.py  Tenant configuration and entitlement state
 │
+├── pipelines/rag_pipeline.py  Hybrid retrieval + grounded synthesis used by both /ask and orgos
 ├── agents/                    Department agents, project intelligence, skills, and governance
 ├── workers/job_worker.py      Separate durable background worker process
 ├── data/                      Git-ignored runtime state: SQLite, queued jobs, documents, indexes, logs
@@ -255,14 +280,18 @@ nginx (:80)
   │     workspace · admin · operations · project intelligence
   │
   └── /api/* → FastAPI product API (:8000)
-        ├── Workspace API: meetings, CRM, reports, search, notifications
+        ├── orgos: /hr /it /finance /marketing /org/*  — real engine, 4 departments
+        ├── Sandboxed engine: /people-ops/* /organization/*  — 6 departments + 2 extra scenarios
+        ├── /ask                                — lean single-department grounded Q&A (recommended)
+        ├── /query, /intelligence/ask            — older multi-agent fan-out (many LLM calls)
         ├── Tenant/Admin API: users, configuration, organization structure, integrations
         ├── Project API: scoped queries, skills, approvals, generated documents
         └── Governed data and intelligence services
               query service · department agents · RAG · search
               extraction/OCR · PII rules · permissions
                    ├── SQLite + files: tenant/project metadata and documents
-                   ├── FAISS or Qdrant: vector retrieval and embeddings
+                   ├── FAISS or Qdrant: vector retrieval and embeddings — ONE store, written by
+                   │     both orgos (scripts/build_indexes.py) and organization_rag (uploads)
                    ├── OpenRouter/Ollama: configured tenant model providers
                    └── Durable job queue + worker
                          indexing · source sync · webhooks · retry/dead letter

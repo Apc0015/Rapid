@@ -402,21 +402,17 @@ app.include_router(finance_router)
 app.include_router(marketing_router)
 app.include_router(org_router)
 
-# ── Frontend (served so the console is reachable at one URL) ───────────────────
-from pathlib import Path as _Path
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-
-_frontend_dir = _Path(__file__).parent / "frontend"
-
+# ── Frontend ─────────────────────────────────────────────────────────────────
+# The React app (frontend/) is the only UI. It is never served by this process:
+# dev runs it on its own Vite server (npm run dev --prefix frontend, port 4173,
+# calling this API directly at :8000 — see start.sh); production builds it to
+# frontend/dist and nginx serves those static files + proxies /api/* here (see
+# nginx/nginx.conf, docker-compose.yml). This root route exists only so hitting
+# the bare API URL doesn't 404 — it does not serve any HTML.
 
 @app.get("/", include_in_schema=False)
 async def _root():
-    return RedirectResponse(url="/app/hr.html")
-
-
-if _frontend_dir.is_dir():
-    app.mount("/app", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
+    return {"service": "rapid-api", "docs": "/docs"}
 
 
 # ── Main query endpoint ───────────────────────────────────────────────────────
@@ -446,12 +442,13 @@ async def query(
     except asyncio.TimeoutError:
         logger.error(f"Query timed out for user={current_user['sub']}: '{req.query[:60]}'")
         raise HTTPException(status_code=504, detail="Query timed out — try a simpler question")
-# ── Lean grounded Q&A (Ask RAPID) ─────────────────────────────────────────────
-# The full /query pipeline fans out to the whole multi-agent org — dozens of
-# LLM calls, built for cloud providers. /ask is the lean complement the console
-# uses: one query embedding, retrieval scores pick the department, then the
-# proven RAG pipeline produces ONE grounded, cited answer. Works well on a
-# local Ollama model.
+# ── Lean grounded Q&A ──────────────────────────────────────────────────────────
+# /query and /intelligence/ask fan out to the whole multi-agent org — dozens
+# of LLM calls, built for cloud providers. /ask is the lean alternative: one
+# query embedding, retrieval scores pick the department, then the proven RAG
+# pipeline produces ONE grounded, cited answer. Works well on a local Ollama
+# model. Not yet wired into the React portal — see README's "Two Execution
+# Engines" section for the current state of the Q&A entry points.
 
 @app.post("/ask", response_model=QueryResponse)
 @limiter.limit("30/minute")
