@@ -3,6 +3,8 @@ export interface Profile {
   role?: string;
   tenant_id?: string;
   username?: string;
+  permitted_departments?: string[];
+  capabilities?: Record<string, boolean>;
 }
 
 export interface AuthResponse {
@@ -11,6 +13,8 @@ export interface AuthResponse {
   name?: string;
   role?: string;
   user_id?: string;
+  tenant_id?: string;
+  permitted_departments?: string[];
 }
 
 export interface OrganizationSummary {
@@ -113,6 +117,63 @@ export interface TenantConfiguration {
   features: Array<{ key: string; name: string; enabled: boolean }>;
   models: ModelConfiguration[];
   connections: ConnectionConfiguration[];
+  operating_profile?: OperatingProfile;
+  trust_summary?: TrustSummary;
+}
+
+export interface TrustSummary {
+  boundary: TrustControl;
+  runtime: TrustControl;
+  connections: TrustControl;
+  evidence: TrustControl;
+  approvals: TrustControl;
+}
+
+export interface TrustControl {
+  status: string;
+  title: string;
+  detail: string;
+}
+
+export interface OperatingProfile {
+  profile_key: string;
+  name: string;
+  description: string;
+  deployment_mode: string;
+  deployment_policy: {
+    name: string;
+    description: string;
+    data_residency: string;
+    allowed_providers: string[];
+    cloud_egress: string;
+  };
+  departments: string[];
+  configured: boolean;
+  updated_at?: string;
+}
+
+export interface OrganizationProfileOption {
+  key: string;
+  name: string;
+  description: string;
+  departments: string[];
+  features: string[];
+  industry_pack?: string | null;
+  default_deployment: string;
+}
+
+export interface DeploymentModeOption {
+  key: string;
+  name: string;
+  description: string;
+  data_residency: string;
+  allowed_providers: string[];
+  cloud_egress: string;
+}
+
+export interface TenantFeature {
+  key: string;
+  enabled: boolean;
 }
 
 export interface Readiness {
@@ -138,6 +199,7 @@ export interface WorkspaceData {
   records: BusinessRecord[];
   notifications: NotificationItem[];
   configuration: TenantConfiguration | null;
+  features: TenantFeature[];
   readiness: Readiness | null;
   jobs: JobsResponse | null;
 }
@@ -150,9 +212,11 @@ export interface SearchResult {
 }
 
 export interface IntelligenceEvidence {
-  kind: 'workspace_record' | 'knowledge';
+  kind: 'workspace_record' | 'knowledge' | 'project_data';
   title: string;
   excerpt: string;
+  department?: string | null;
+  classification?: string | null;
 }
 
 export interface IntelligenceAnswer {
@@ -163,8 +227,32 @@ export interface IntelligenceAnswer {
   departments: string[];
   action: string;
   provider?: string | null;
-  mode: 'agent_engine' | 'scoped_evidence_fallback';
+  mode: 'organization_agent' | 'project_agent' | 'portfolio_agent' | 'scoped_evidence_fallback' | 'workspace_brief';
   evidence: IntelligenceEvidence[];
+  scope?: string;
+  sources?: string[];
+  data_gaps?: string[];
+  agent?: string | null;
+  duration_ms?: number | null;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+  metadata?: {
+    response?: IntelligenceAnswer;
+    workspace_view?: string | null;
+    department?: string | null;
+  };
 }
 
 export interface OperatingReport {

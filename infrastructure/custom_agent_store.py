@@ -8,6 +8,7 @@ IntraDeptOrchestrator at runtime — no code changes or restarts required.
 
 Table: custom_agents
   agent_id        TEXT PRIMARY KEY  (uuid4)
+  tenant_id       TEXT              owning organization
   dept_tag        TEXT              e.g. "finance"
   role_title      TEXT              e.g. "Tax Specialist"
   specialization  TEXT              one-liner shown in prompts
@@ -58,6 +59,7 @@ def _ensure_table() -> None:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS custom_agents (
                 agent_id        TEXT PRIMARY KEY,
+                tenant_id       TEXT NOT NULL DEFAULT 'default',
                 dept_tag        TEXT NOT NULL,
                 role_title      TEXT NOT NULL,
                 specialization  TEXT NOT NULL DEFAULT '',
@@ -73,11 +75,18 @@ def _ensure_table() -> None:
             )
         """)
         conn.commit()
+        try:
+            conn.execute("ALTER TABLE custom_agents ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_tenant ON custom_agents(tenant_id, dept_tag)")
+        conn.commit()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def create_custom_agent(
+    tenant_id: str,
     dept_tag: str,
     role_title: str,
     specialization: str = "",
@@ -111,6 +120,7 @@ def create_custom_agent(
 
     record = {
         "agent_id":        agent_id,
+        "tenant_id":       tenant_id,
         "dept_tag":        dept_tag,
         "role_title":      role_title.strip(),
         "specialization":  specialization.strip(),
@@ -128,11 +138,11 @@ def create_custom_agent(
     with _conn() as conn:
         conn.execute("""
             INSERT INTO custom_agents
-            (agent_id, dept_tag, role_title, specialization,
+            (agent_id, tenant_id, dept_tag, role_title, specialization,
              bid_keywords, permitted_tables, doc_folders, tools_available,
              system_prompt, created_by, created_at, updated_at, active)
             VALUES
-            (:agent_id, :dept_tag, :role_title, :specialization,
+            (:agent_id, :tenant_id, :dept_tag, :role_title, :specialization,
              :bid_keywords, :permitted_tables, :doc_folders, :tools_available,
              :system_prompt, :created_by, :created_at, :updated_at, :active)
         """, record)
@@ -142,17 +152,18 @@ def create_custom_agent(
     return _deserialise(record)
 
 
-def get_custom_agent(agent_id: str) -> Optional[Dict[str, Any]]:
+def get_custom_agent(agent_id: str, tenant_id: str) -> Optional[Dict[str, Any]]:
     """Return one agent record by ID, or None if not found."""
     _ensure_table()
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM custom_agents WHERE agent_id = ?", (agent_id,)
+            "SELECT * FROM custom_agents WHERE agent_id = ? AND tenant_id = ?", (agent_id, tenant_id)
         ).fetchone()
     return _deserialise(dict(row)) if row else None
 
 
 def list_custom_agents(
+    tenant_id: str,
     dept_tag: Optional[str] = None,
     active_only: bool = True,
 ) -> List[Dict[str, Any]]:
@@ -160,8 +171,8 @@ def list_custom_agents(
     List all custom agents, optionally filtered by dept and/or active status.
     """
     _ensure_table()
-    sql = "SELECT * FROM custom_agents WHERE 1=1"
-    params: List[Any] = []
+    sql = "SELECT * FROM custom_agents WHERE tenant_id = ?"
+    params: List[Any] = [tenant_id]
     if dept_tag:
         sql += " AND dept_tag = ?"
         params.append(dept_tag)
@@ -176,6 +187,7 @@ def list_custom_agents(
 
 def update_custom_agent(
     agent_id: str,
+    tenant_id: str,
     **fields: Any,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -201,7 +213,7 @@ def update_custom_agent(
         updates[k] = v
 
     if not updates:
-        return get_custom_agent(agent_id)
+        return get_custom_agent(agent_id, tenant_id)
 
     updates["updated_at"] = _now()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
@@ -209,20 +221,20 @@ def update_custom_agent(
 
     with _conn() as conn:
         conn.execute(
-            f"UPDATE custom_agents SET {set_clause} WHERE agent_id = ?", params
+            f"UPDATE custom_agents SET {set_clause} WHERE agent_id = ? AND tenant_id = ?", params + [tenant_id]
         )
         conn.commit()
 
     logger.info(f"[CustomAgentStore] Updated agent {agent_id}: {list(updates.keys())}")
-    return get_custom_agent(agent_id)
+    return get_custom_agent(agent_id, tenant_id)
 
 
-def delete_custom_agent(agent_id: str) -> bool:
+def delete_custom_agent(agent_id: str, tenant_id: str) -> bool:
     """Hard-delete a custom agent. Returns True if found and deleted."""
     _ensure_table()
     with _conn() as conn:
         cur = conn.execute(
-            "DELETE FROM custom_agents WHERE agent_id = ?", (agent_id,)
+            "DELETE FROM custom_agents WHERE agent_id = ? AND tenant_id = ?", (agent_id, tenant_id)
         )
         conn.commit()
     deleted = cur.rowcount > 0

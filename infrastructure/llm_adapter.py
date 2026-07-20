@@ -80,6 +80,12 @@ class TenantLLMAdapter:
         provider = get_provider(provider_id)
         self._base_url = cfg.get("base_url") or (provider.base_url if provider else "")
         self._api_key  = cfg.get("api_key", "")
+        credential_ref = str(cfg.get("credential_ref") or "").strip()
+        if not self._api_key and credential_ref:
+            # Tenant administration stores references, never raw provider keys.
+            # Resolve against this tenant so another organization cannot reuse it.
+            from infrastructure.secret_vault import get_secret_vault
+            self._api_key = get_secret_vault().resolve(credential_ref, tenant_id)
 
     # ── Public interface (mirrors LLMClient) ──────────────────────────────────
 
@@ -344,6 +350,9 @@ async def get_llm_for_tenant(tenant_id: str = "default") -> "LLMClient | TenantL
     model_id    = tenant_cfg["model_id"]
     cfg         = tenant_cfg["cfg"]
 
+    from infrastructure.tenant_policy import get_tenant_policy
+    get_tenant_policy(tenant_id).require_provider(provider_id)
+
     provider = get_provider(provider_id)
     if not provider:
         logger.warning(
@@ -388,6 +397,9 @@ def get_llm_for_tenant_sync(tenant_id: str = "default") -> "LLMClient | TenantLL
     provider_id = tenant_cfg["provider_id"]
     model_id    = tenant_cfg["model_id"]
     cfg         = tenant_cfg["cfg"]
+
+    from infrastructure.tenant_policy import get_tenant_policy
+    get_tenant_policy(tenant_id).require_provider(provider_id)
 
     provider = get_provider(provider_id)
     if not provider:

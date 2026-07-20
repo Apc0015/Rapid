@@ -10,6 +10,7 @@ import {
   CircleUserRound,
   FolderKanban,
   LayoutDashboard,
+  MessageSquareText,
   Menu,
   Search,
   Settings,
@@ -21,10 +22,12 @@ import {
 } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { VIEW_META, type WorkspaceView } from '../../constants';
+import { VIEW_FEATURES, VIEW_META, type WorkspaceView } from '../../constants';
 import { IntelligenceDock } from '../intelligence/IntelligenceDock';
 import { initials } from '../../lib/format';
-import type { WorkspaceOverview } from '../../types';
+import { capabilitiesFor } from '../../lib/access';
+import { getProfile } from '../../lib/api';
+import type { TenantFeature, WorkspaceOverview } from '../../types';
 
 interface NavItem {
   view: WorkspaceView;
@@ -46,6 +49,7 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
     { view: 'departments', label: 'Departments', icon: Building2 },
   ] },
   { label: 'Intelligence', items: [
+    { view: 'chat', label: 'Chat', icon: MessageSquareText },
     { view: 'reports', label: 'Reports', icon: BarChart3 },
     { view: 'library', label: 'Library', icon: BookOpen },
     { view: 'search', label: 'Search', icon: Search },
@@ -53,15 +57,21 @@ const groups: Array<{ label: string; items: NavItem[] }> = [
   ] },
 ];
 
+const intelligenceViews = new Set<WorkspaceView>([
+  'overview', 'meetings', 'actions', 'people', 'crm', 'projects', 'tickets', 'departments', 'notifications',
+]);
+
 interface WorkspaceShellProps {
   overview: WorkspaceOverview;
   view: WorkspaceView;
   notificationCount: number;
+  features: TenantFeature[];
   navigationOpen: boolean;
   onNavigate: (view: WorkspaceView) => void;
   onNavigationOpen: (open: boolean) => void;
   onReset: () => void;
   onPrimaryAction: () => void;
+  onOpenChat: (prompt: string, context: WorkspaceView) => void;
   onSignOut: () => void;
   children: ReactNode;
 }
@@ -70,16 +80,19 @@ export function WorkspaceShell({
   overview,
   view,
   notificationCount,
+  features,
   navigationOpen,
   onNavigate,
   onNavigationOpen,
   onReset,
   onPrimaryAction,
+  onOpenChat,
   onSignOut,
   children,
 }: WorkspaceShellProps) {
   const meta = VIEW_META[view];
-  const primaryLabel = view === 'meetings' ? 'Schedule meeting' : view === 'reports' ? 'Generate report' : view === 'settings' ? 'Open admin portal' : '';
+  const capabilities = capabilitiesFor(getProfile());
+  const primaryLabel = view === 'meetings' && capabilities.operateDepartment ? 'Schedule meeting' : view === 'reports' ? 'Generate report' : view === 'settings' && capabilities.configureTenant ? 'Open admin portal' : '';
 
   return (
     <div className="product-page product-shell portal-shell">
@@ -94,10 +107,12 @@ export function WorkspaceShell({
           <ChevronRight size={13} aria-hidden="true" />
         </div>
         <nav className="product-nav portal-nav" aria-label="Product navigation">
-          {groups.map((group) => (
-            <div className="nav-group" key={group.label}>
+          {groups.map((group) => {
+            const items = group.items.filter((item) => isViewEnabled(item.view, features));
+            if (!items.length) return null;
+            return <div className="nav-group" key={group.label}>
               <p className="nav-group-label">{group.label}</p>
-              {group.items.map(({ view: itemView, label, icon: Icon }) => (
+              {items.map(({ view: itemView, label, icon: Icon }) => (
                 <button
                   key={itemView}
                   type="button"
@@ -110,11 +125,11 @@ export function WorkspaceShell({
                   {itemView === 'notifications' && notificationCount > 0 ? <b id="notification-count">{notificationCount}</b> : null}
                 </button>
               ))}
-            </div>
-          ))}
+            </div>;
+          })}
         </nav>
         <div className="product-sidebar-footer">
-          <Link to="/operations"><ShieldCheck size={14} aria-hidden="true" /> Operations console</Link>
+          {capabilities.operateDepartment ? <Link to="/operations"><ShieldCheck size={14} aria-hidden="true" /> Department operations</Link> : null}
           <button className={view === 'settings' ? 'active' : ''} data-view="settings" type="button" onClick={() => onNavigate('settings')}><Settings size={14} aria-hidden="true" /> Settings</button>
           <button type="button" onClick={onSignOut}><CircleUserRound size={14} aria-hidden="true" /> Sign out</button>
         </div>
@@ -130,14 +145,19 @@ export function WorkspaceShell({
           <div><p id="view-kicker" className="auth-kicker">{meta.context}</p><h1 id="view-title">{meta.title}</h1><p id="view-subtitle">{meta.description}</p></div>
           <div className="header-actions">
             <span className="sandbox-badge"><ShieldCheck size={12} /> Synthetic demo</span>
-            <button id="reset-demo" className="product-button secondary" type="button" onClick={onReset}>Reset demo</button>
+            {capabilities.resetDemo ? <button id="reset-demo" className="product-button secondary" type="button" onClick={onReset}>Reset demo</button> : null}
             {primaryLabel ? <button id="primary-action" className="product-button primary" type="button" onClick={onPrimaryAction}>{primaryLabel}</button> : null}
           </div>
         </header>
-        <IntelligenceDock view={view} />
+        {intelligenceViews.has(view) ? <IntelligenceDock key={view} view={view} onOpenChat={onOpenChat} /> : null}
         {children}
       </main>
       {navigationOpen ? <button className="navigation-scrim" type="button" aria-label="Close navigation" onClick={() => onNavigationOpen(false)} /> : null}
     </div>
   );
+}
+
+function isViewEnabled(view: WorkspaceView, features: TenantFeature[]): boolean {
+  const requiredFeature = VIEW_FEATURES[view];
+  return !requiredFeature || features.some((feature) => feature.key === requiredFeature && feature.enabled);
 }

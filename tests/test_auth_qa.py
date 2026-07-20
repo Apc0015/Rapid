@@ -867,6 +867,15 @@ class TestUserDatabase:
         loaded = self.ur.load_users()
         assert loaded["eve"]["permitted_departments"] == ["hr", "finance", "legal"]
 
+    def test_tenant_id_round_trips_through_the_database(self):
+        """Tenant identity must survive DB-backed user storage and JWT login seeding."""
+        user_data = self._make_user("tenant_user")
+        user_data["tenant_id"] = "tenant-alpha"
+        self.ur._db_save_all_users({"tenant_user": user_data})
+
+        loaded = self.ur.load_users()
+        assert loaded["tenant_user"]["tenant_id"] == "tenant-alpha"
+
     def test_load_falls_back_to_yaml_when_db_empty(self):
         """When DB has no records, load_users() falls back to YAML."""
         users = {"fallback_user": self._make_user("fallback_user")}

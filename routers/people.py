@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from routers.deps import get_current_user
+from infrastructure.people_ops_store import DEPARTMENTS
 from infrastructure.people_directory import get_people_directory
 
 router = APIRouter(prefix="/people", tags=["people"])
@@ -62,6 +63,28 @@ def _get_tenant(current_user: dict) -> str:
     return tid
 
 
+def _allowed_departments(current_user: dict) -> set[str]:
+    if current_user.get("role") in {"admin", "ceo"}:
+        return set(DEPARTMENTS)
+    return set(current_user.get("depts") or []) & set(DEPARTMENTS)
+
+
+def _person_with_access(person_id: str, current_user: dict):
+    person = get_people_directory().get(person_id)
+    if not person:
+        raise HTTPException(status_code=404, detail=f"Person '{person_id}' not found")
+    if person.tenant_id != _get_tenant(current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if person.dept_id and person.dept_id not in _allowed_departments(current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to this department")
+    return person
+
+
+def _visible_people(people, current_user: dict):
+    allowed = _allowed_departments(current_user)
+    return [person for person in people if not person.dept_id or person.dept_id in allowed]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -75,6 +98,8 @@ async def create_person(
     if current_user.get("role") not in ("admin", "manager", "dept_head",
                                          "division_head", "c_suite", "ceo"):
         raise HTTPException(status_code=403, detail="Manager role required to create people")
+    if req.dept_id and req.dept_id not in _allowed_departments(current_user):
+        raise HTTPException(status_code=403, detail="You cannot create a person outside your department scope")
 
     tenant_id = _get_tenant(current_user)
     directory = get_people_directory()
@@ -104,13 +129,16 @@ async def list_people(
     """List people in the tenant, with optional dept/role/status filters."""
     tenant_id = _get_tenant(current_user)
     directory = get_people_directory()
+    if dept_id and dept_id not in _allowed_departments(current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to this department")
     people = directory.list(
         tenant_id=tenant_id, dept_id=dept_id, role=role,
         status=status, limit=limit,
     )
+    visible = _visible_people(people, current_user)
     return {
-        "people":  [p.to_dict() for p in people],
-        "count":   len(people),
+        "people":  [p.to_dict() for p in visible],
+        "count":   len(visible),
         "filters": {"dept_id": dept_id, "role": role, "status": status},
     }
 
@@ -125,6 +153,7 @@ async def search_people(
     tenant_id = _get_tenant(current_user)
     directory = get_people_directory()
     results = directory.search(tenant_id=tenant_id, query=q, limit=limit)
+    results = _visible_people(results, current_user)
     return {
         "query":   q,
         "results": [p.to_dict() for p in results],
@@ -139,7 +168,21 @@ async def org_chart(
     """Return full org hierarchy for this tenant."""
     tenant_id = _get_tenant(current_user)
     directory = get_people_directory()
-    return directory.org_chart(tenant_id)
+    chart = directory.org_chart(tenant_id)
+    allowed = _allowed_departments(current_user)
+    if current_user.get("role") not in {"admin", "ceo"}:
+        chart["by_dept"] = {
+            department: people
+            for department, people in chart.get("by_dept", {}).items()
+            if department in allowed
+        }
+        chart["root_leaders"] = [
+            person for person in chart.get("root_leaders", [])
+            if not person.get("dept_id") or person.get("dept_id") in allowed
+        ]
+        chart["total"] = sum(len(people) for people in chart["by_dept"].values())
+        chart["dept_count"] = len(chart["by_dept"])
+    return chart
 
 
 @router.get("/headcount")
@@ -150,6 +193,8 @@ async def headcount(
     tenant_id = _get_tenant(current_user)
     directory = get_people_directory()
     counts = directory.dept_headcount(tenant_id)
+    allowed = _allowed_departments(current_user)
+    counts = {department: count for department, count in counts.items() if department in allowed}
     return {
         "tenant_id": tenant_id,
         "headcount": counts,
@@ -163,13 +208,7 @@ async def get_person(
     current_user: dict = Depends(get_current_user),
 ):
     """Get a person's full profile."""
-    directory = get_people_directory()
-    person = directory.get(person_id)
-    if not person:
-        raise HTTPException(status_code=404, detail=f"Person '{person_id}' not found")
-    tenant_id = _get_tenant(current_user)
-    if person.tenant_id != tenant_id and current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
+    person = _person_with_access(person_id, current_user)
     return {"person": person.to_dict()}
 
 
@@ -184,8 +223,11 @@ async def update_person(
                                          "division_head", "c_suite", "ceo"):
         raise HTTPException(status_code=403, detail="Manager role required")
 
+    _person_with_access(person_id, current_user)
     directory = get_people_directory()
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if updates.get("dept_id") and updates["dept_id"] not in _allowed_departments(current_user):
+        raise HTTPException(status_code=403, detail="You cannot move a person outside your department scope")
     person = directory.update(person_id, **updates)
     if not person:
         raise HTTPException(status_code=404, detail=f"Person '{person_id}' not found")
@@ -201,6 +243,7 @@ async def deactivate_person(
     if current_user.get("role") not in ("admin", "manager", "c_suite", "ceo"):
         raise HTTPException(status_code=403, detail="Admin role required")
 
+    _person_with_access(person_id, current_user)
     directory = get_people_directory()
     person = directory.deactivate(person_id)
     if not person:
@@ -215,10 +258,29 @@ async def person_graph(
     current_user: dict = Depends(get_current_user),
 ):
     """Return the person's org graph — manager, direct reports, collaborators."""
+    _person_with_access(person_id, current_user)
     directory = get_people_directory()
     graph = directory.get_graph(person_id, depth=depth)
     if "error" in graph:
         raise HTTPException(status_code=404, detail=graph["error"])
+    allowed = _allowed_departments(current_user)
+    manager = graph.get("manager")
+    if manager and manager.get("dept_id") and manager["dept_id"] not in allowed:
+        graph["manager"] = None
+    graph["direct_reports"] = [
+        person for person in graph.get("direct_reports", [])
+        if not person.get("dept_id") or person.get("dept_id") in allowed
+    ]
+    graph["collaborators"] = [
+        person for person in graph.get("collaborators", [])
+        if not person.get("dept_id") or person.get("dept_id") in allowed
+    ]
+    visible_ids = {person_id}
+    visible_ids.update(person["person_id"] for person in graph["direct_reports"])
+    visible_ids.update(person["person_id"] for person in graph["collaborators"])
+    if graph.get("manager"):
+        visible_ids.add(graph["manager"]["person_id"])
+    graph["edges"] = [edge for edge in graph.get("edges", []) if edge.get("target") in visible_ids]
     return graph
 
 
@@ -228,8 +290,9 @@ async def direct_reports(
     current_user: dict = Depends(get_current_user),
 ):
     """List all direct reports for this person."""
+    _person_with_access(person_id, current_user)
     directory = get_people_directory()
-    reports = directory.get_direct_reports(person_id)
+    reports = _visible_people(directory.get_direct_reports(person_id), current_user)
     return {
         "person_id": person_id,
         "reports":   [p.to_dict() for p in reports],
@@ -244,8 +307,9 @@ async def collaborators(
     current_user: dict = Depends(get_current_user),
 ):
     """List department peers (collaborators) for this person."""
+    _person_with_access(person_id, current_user)
     directory = get_people_directory()
-    collabs = directory.get_collaborators(person_id, limit=limit)
+    collabs = _visible_people(directory.get_collaborators(person_id, limit=limit), current_user)
     return {
         "person_id":     person_id,
         "collaborators": [p.to_dict() for p in collabs],

@@ -2,10 +2,9 @@ from __future__ import annotations
 """
 routers/nl_agent_creator.py — Natural Language Agent Creator
 
-Lets an admin describe a new specialist agent in plain English.
-The LLM parses the description into structured config fields,
-then creates and hot-injects the agent — exactly like the JSON endpoint,
-but with zero JSON required from the admin.
+Lets a tenant administrator describe a new specialist agent in plain English.
+The LLM parses the description into structured config fields and stores a
+tenant-scoped configuration for activation by the tenant-aware runtime.
 
 Endpoint
 ────────
@@ -38,6 +37,15 @@ _VALID_DEPTS = {
     "ops", "it", "procurement", "rd", "customer_success",
 }
 _VALID_TOOLS = {"db_query", "document_search", "calculation", "peer_consult"}
+
+
+def _tenant(current_user: dict) -> str:
+    return str(current_user.get("tenant_id") or "default")
+
+
+def _require_department_access(current_user: dict, department: str) -> None:
+    if current_user.get("role") not in {"admin", "ceo"} and department not in set(current_user.get("depts") or []):
+        raise HTTPException(status_code=403, detail="You do not have access to this department")
 
 # ── System prompt for the LLM parser ─────────────────────────────────────────
 
@@ -108,7 +116,7 @@ async def create_agent_from_text(
     }
     ```
 
-    No JSON config knowledge required. No restart needed.
+    No JSON configuration knowledge required.
     """
     # Validate dept
     if req.dept not in _VALID_DEPTS:
@@ -116,6 +124,8 @@ async def create_agent_from_text(
             status_code=404,
             detail=f"Unknown department '{req.dept}'. Valid: {sorted(_VALID_DEPTS)}"
         )
+    _require_department_access(current_user, req.dept)
+    tenant_id = _tenant(current_user)
 
     # ── Step 1: Parse plain English → structured config via LLM ──────────────
     config = await _parse_description(req.dept, req.description)
@@ -135,7 +145,7 @@ async def create_agent_from_text(
         tools = ["db_query", "document_search"]
 
     # Check for duplicates in this dept
-    existing = list_custom_agents(dept_tag=req.dept, active_only=False)
+    existing = list_custom_agents(tenant_id, dept_tag=req.dept, active_only=False)
     if any(a["role_title"].lower() == role_title.lower() for a in existing):
         raise HTTPException(
             status_code=409,
@@ -145,6 +155,7 @@ async def create_agent_from_text(
 
     # ── Step 3: Persist to SQLite ──────────────────────────────────────────────
     record = create_custom_agent(
+        tenant_id=tenant_id,
         dept_tag=req.dept,
         role_title=role_title,
         specialization=config.get("specialization", ""),
@@ -156,28 +167,16 @@ async def create_agent_from_text(
         created_by=current_user.get("sub", "admin"),
     )
 
-    # ── Step 4: Hot-inject into live IntraDeptOrchestrator ────────────────────
-    injected = False
-    try:
-        from shared import AGENT_REGISTRY
-        from agents.base.dynamic_employee_agent import DynamicEmployeeAgent
-        dept_agent = AGENT_REGISTRY.get_dept_agent(req.dept)
-        if dept_agent and hasattr(dept_agent, "_intra"):
-            dept_agent._intra.add_specialist(DynamicEmployeeAgent(record))
-            injected = True
-    except Exception as e:
-        logger.warning(f"[NLCreate] Hot-inject failed (agent saved to DB): {e}")
-
     logger.info(
         f"[NLCreate] Created '{role_title}' for dept={req.dept} "
-        f"by {current_user.get('sub','?')} | live={injected}"
+        f"by {current_user.get('sub','?')} | activation=awaiting_tenant_runtime"
     )
 
     return {
         "message": f"Agent '{role_title}' created for dept '{req.dept}' from plain text.",
         "original_description": req.description,
         "parsed_config": record,
-        "live_injected": injected,
+        "activation_status": "awaiting_tenant_runtime",
     }
 
 

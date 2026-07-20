@@ -17,6 +17,40 @@ from infrastructure.jwt_manager import get_jwt_manager
 
 _bearer = HTTPBearer(auto_error=False)
 
+# Roles are product concepts, not presentation details.  Keep the policy here
+# so API routes and the portal make the same access decision.
+TENANT_ADMIN_ROLES = frozenset({"admin", "ceo"})
+DEPARTMENT_OPERATOR_ROLES = frozenset({"admin", "ceo", "manager", "dept_head", "division_head", "c_suite"})
+EXECUTIVE_APPROVER_ROLES = TENANT_ADMIN_ROLES
+
+
+def user_capabilities(user: dict) -> dict[str, bool]:
+    """Return the stable product capabilities for an authenticated principal."""
+    role = str(user.get("role") or "employee")
+    tenant_admin = role in TENANT_ADMIN_ROLES
+    department_operator = role in DEPARTMENT_OPERATOR_ROLES
+    return {
+        "view_company": True,
+        "manage_department": department_operator,
+        "manage_department_data": department_operator,
+        "manage_department_integrations": department_operator,
+        "manage_projects": department_operator,
+        "approve_department_work": department_operator,
+        "approve_executive_work": role in EXECUTIVE_APPROVER_ROLES,
+        "configure_tenant": tenant_admin,
+        "manage_users": tenant_admin,
+        "reset_demo": tenant_admin,
+    }
+
+
+def require_capability(capability: str):
+    """FastAPI dependency factory for product capabilities."""
+    def _dep(current_user: dict = Depends(get_current_user)) -> dict:
+        if not user_capabilities(current_user).get(capability, False):
+            raise HTTPException(status_code=403, detail=f"{capability.replace('_', ' ').title()} access required")
+        return current_user
+    return _dep
+
 
 def _load_users() -> dict:
     """Load users from the DB-backed store (public-facing for internal use)."""
@@ -59,9 +93,9 @@ def get_current_user(
 def require_admin(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Dependency — requires admin role."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+    """Dependency — requires a tenant administrator (CEO or administrator)."""
+    if current_user.get("role") not in TENANT_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin or CEO access required")
     return current_user
 
 
@@ -108,6 +142,6 @@ def auth_user(user_id: str, password: str) -> dict:
 def require_admin_password(user_id: str, password: str) -> dict:
     """Legacy admin check via password — used by endpoints not yet migrated."""
     user = auth_user_password(user_id, password)
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+    if user.get("role") not in TENANT_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin or CEO access required")
     return user

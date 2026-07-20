@@ -3,6 +3,8 @@ import { Modal } from '../../components/Modal';
 import { EmptyState } from '../../components/StatusTag';
 import { DEPARTMENTS } from '../../constants';
 import { formatDate, toDateTimeLocal } from '../../lib/format';
+import { capabilitiesFor, permittedDepartments } from '../../lib/access';
+import { getProfile } from '../../lib/api';
 import type { ActionItem, Meeting } from '../../types';
 import { ActionRow } from './WorkspaceViews';
 
@@ -105,6 +107,9 @@ export function MeetingDialogs({
   const nextHour = new Date(Date.now() + 3_600_000);
   nextHour.setMinutes(0, 0, 0);
   const actionDue = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  const profile = getProfile();
+  const capabilities = capabilitiesFor(profile);
+  const departments = permittedDepartments(profile, Object.keys(DEPARTMENTS));
 
   return (
     <>
@@ -117,7 +122,7 @@ export function MeetingDialogs({
         onClose={onMeetingClose}
         labelledBy="meeting-edit-title"
       >
-        {selectedMeeting ? <form id="meeting-edit-form" key={`${selectedMeeting.id}-${selectedMeeting.notes}`} onSubmit={saveMeeting}>
+        {selectedMeeting ? <form id="meeting-edit-form" key={`${selectedMeeting.id}-${selectedMeeting.notes}`} onSubmit={capabilities.operateDepartment ? saveMeeting : (event) => event.preventDefault()}>
           <div className="form-grid">
             <label className="admin-label span-2">Title<input id="meeting-title" name="title" maxLength={160} required defaultValue={selectedMeeting.title} /></label>
             <label className="admin-label">Facilitator<input id="meeting-facilitator" name="facilitator" maxLength={160} required defaultValue={selectedMeeting.facilitator} /></label>
@@ -129,16 +134,16 @@ export function MeetingDialogs({
             <label className="admin-label span-2">Notes<textarea id="meeting-notes" name="notes" rows={5} defaultValue={selectedMeeting.notes} placeholder="Capture context and evidence" /></label>
             <label className="admin-label span-2">Decisions<textarea id="meeting-decisions" name="decisions" rows={3} defaultValue={selectedMeeting.decisions.join('\n')} placeholder="One decision per line" /></label>
           </div>
-          <div className="dialog-actions"><button id="open-action-form" className="product-button secondary" type="button" onClick={() => setActionOpen(true)}>Assign action</button><button className="product-button primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save meeting'}</button></div>
+          {capabilities.operateDepartment ? <div className="dialog-actions"><button id="open-action-form" className="product-button secondary" type="button" onClick={() => setActionOpen(true)}>Assign action</button><button className="product-button primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save meeting'}</button></div> : null}
           <section className="meeting-actions-section"><h3>Assigned actions</h3><div id="meeting-actions-list" className="action-list">{selectedMeeting.actions?.length ? selectedMeeting.actions.map((action: ActionItem) => <ActionRow action={action} key={action.id} onChange={onChangeAction} />) : <EmptyState>No actions have been assigned from this meeting.</EmptyState>}</div></section>
         </form> : null}
       </Modal>
 
       <Modal id="action-dialog" open={actionOpen && Boolean(selectedMeeting)} title="Assign an action" context="Meeting follow-up" size="small" onClose={() => setActionOpen(false)}>
-        <form id="meeting-action-form" className="stack-form" onSubmit={createAction}>
+        <form id="meeting-action-form" className="stack-form" onSubmit={capabilities.operateDepartment ? createAction : (event) => event.preventDefault()}>
           <label className="admin-label">Action title<input id="new-action-title" name="title" maxLength={240} required /></label>
           <label className="admin-label">Owner<input id="new-action-owner" name="owner" maxLength={160} required defaultValue={selectedMeeting?.facilitator} /></label>
-          <label className="admin-label">Department<select id="new-action-department" name="department" required defaultValue={selectedMeeting?.department || 'ops'}>{Object.entries(DEPARTMENTS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
+          <label className="admin-label">Department<select id="new-action-department" name="department" required defaultValue={selectedMeeting?.department || departments[0]}>{departments.map((key) => <option key={key} value={key}>{DEPARTMENTS[key]}</option>)}</select></label>
           <label className="admin-label">Due date<input id="new-action-due" name="due_date" type="date" required defaultValue={actionDue} /></label>
           <label className="admin-label">Priority<select id="new-action-priority" name="priority" defaultValue="medium"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
           <button className="product-button primary" type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create action'}</button>
@@ -149,7 +154,7 @@ export function MeetingDialogs({
         <form id="new-meeting-form" onSubmit={createMeeting}>
           <div className="form-grid">
             <label className="admin-label span-2">Title<input id="new-meeting-title" name="title" required maxLength={160} placeholder="Weekly operating review" /></label>
-            <label className="admin-label">Department<select id="new-meeting-department" name="department" defaultValue=""><option value="">Organization-wide</option>{Object.entries(DEPARTMENTS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
+            <label className="admin-label">Department<select id="new-meeting-department" name="department" defaultValue={capabilities.configureTenant ? '' : departments[0]}>{capabilities.configureTenant ? <option value="">Organization-wide</option> : null}{departments.map((key) => <option key={key} value={key}>{DEPARTMENTS[key]}</option>)}</select></label>
             <label className="admin-label">Cadence<select id="new-meeting-recurrence" name="recurrence" defaultValue="none">{CADENCE_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <label className="admin-label">Start time<input id="new-meeting-starts-at" name="starts_at" type="datetime-local" required defaultValue={toDateTimeLocal(nextHour)} /></label>
             <label className="admin-label">Duration<input id="new-meeting-duration" name="duration_minutes" type="number" min={15} max={480} defaultValue={30} required /></label>

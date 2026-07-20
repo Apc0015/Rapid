@@ -381,6 +381,11 @@ class TenantLLMConfigRequest(BaseModel):
     llm_config:  dict = {}              # api_key, base_url, etc.
 
 
+def _require_tenant_scope(tenant_id: str, current_user: dict) -> None:
+    if tenant_id != str(current_user.get("tenant_id") or "default"):
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+
 @router.get("/tenants/{tenant_id}/llm")
 async def get_tenant_llm_config(
     tenant_id: str,
@@ -390,6 +395,7 @@ async def get_tenant_llm_config(
     Admin-only. Get the current LLM config for a tenant.
     The api_key is redacted (shown as "**set**" or "**not set**").
     """
+    _require_tenant_scope(tenant_id, current_user)
     from infrastructure.tenant_manager import get_tenant_manager
     tm = get_tenant_manager()
     tenant = tm.get_tenant(tenant_id)
@@ -423,6 +429,7 @@ async def update_tenant_llm_config(
     Validates provider and model against the registry before saving.
     Invalidates the in-memory adapter cache for this tenant.
     """
+    _require_tenant_scope(tenant_id, current_user)
     from infrastructure.llm_registry import validate_tenant_llm_config, PROVIDER_REGISTRY
     from infrastructure.tenant_manager import get_tenant_manager
     from infrastructure.llm_adapter import invalidate_tenant_adapter

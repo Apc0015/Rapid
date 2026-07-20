@@ -50,6 +50,22 @@ def _require_classification(current_user: dict, classification: str) -> None:
         raise HTTPException(status_code=403, detail="Your role does not permit this data classification")
 
 
+def _source_is_allowed(source: dict, current_user: dict) -> bool:
+    return get_organization_data_store().source_allows(
+        source, str(current_user.get("sub") or ""), str(current_user.get("role") or "employee")
+    )
+
+
+def _allowed_source_ids(current_user: dict, department: str | None = None) -> set[str]:
+    return {
+        source["id"]
+        for source in get_organization_data_store().list_sources(_tenant(current_user), department)
+        if source["department"] in _allowed_departments(current_user)
+        and source["classification"] in _allowed_classifications(current_user)
+        and _source_is_allowed(source, current_user)
+    }
+
+
 def _raise(error: OrganizationDataError) -> None:
     status = 404 if "not found" in str(error).lower() or "outside" in str(error).lower() else 400
     raise HTTPException(status_code=status, detail=str(error))
@@ -93,6 +109,8 @@ def _source_with_access(source_id: str, current_user: dict) -> dict:
         _raise(error)
     _require_department(current_user, source["department"])
     _require_classification(current_user, source["classification"])
+    if not _source_is_allowed(source, current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to this data source")
     return source
 
 
@@ -102,7 +120,7 @@ async def list_sources(department: Optional[str] = None, current_user: dict = De
         _require_department(current_user, department)
     sources = get_organization_data_store().list_sources(_tenant(current_user), department)
     allowed = _allowed_departments(current_user)
-    return {"sources": [source for source in sources if source["department"] in allowed]}
+    return {"sources": [source for source in sources if source["department"] in allowed and source["classification"] in _allowed_classifications(current_user) and _source_is_allowed(source, current_user)]}
 
 
 @router.post("/sources", status_code=201)
@@ -201,7 +219,8 @@ async def list_documents(
         _tenant(current_user), department, classifications=_allowed_classifications(current_user), limit=limit,
     )
     allowed_departments = _allowed_departments(current_user)
-    return {"documents": [document for document in documents if document["department"] in allowed_departments]}
+    allowed_sources = _allowed_source_ids(current_user, department)
+    return {"documents": [document for document in documents if document["department"] in allowed_departments and document["source_id"] in allowed_sources]}
 
 
 @router.get("/rag/status")
@@ -211,7 +230,8 @@ async def rag_status(department: Optional[str] = None, current_user: dict = Depe
     documents = get_organization_data_store().list_documents(
         _tenant(current_user), department, classifications=_allowed_classifications(current_user), limit=500,
     )
-    documents = [document for document in documents if document["department"] in _allowed_departments(current_user)]
+    allowed_sources = _allowed_source_ids(current_user, department)
+    documents = [document for document in documents if document["department"] in _allowed_departments(current_user) and document["source_id"] in allowed_sources]
     counts = {"pending": 0, "indexed": 0, "failed": 0}
     for document in documents:
         counts[document["index_status"]] = counts.get(document["index_status"], 0) + 1
@@ -224,6 +244,7 @@ async def get_document(document_id: str, current_user: dict = Depends(get_curren
         document = get_organization_data_store().get_document(_tenant(current_user), document_id)
         _require_department(current_user, document["department"])
         _require_classification(current_user, document["classification"])
+        _source_with_access(document["source_id"], current_user)
         document.pop("chunks", None)
         return {"document": document}
     except OrganizationDataError as error:
@@ -254,6 +275,7 @@ async def search_documents(body: SearchRequest, current_user: dict = Depends(get
         return await get_organization_rag().search(
             _tenant(current_user), body.department, body.query, body.source_id, body.limit,
             allowed_classifications=_allowed_classifications(current_user),
+            allowed_source_ids=_allowed_source_ids(current_user, body.department),
         )
     except OrganizationDataError as error:
         _raise(error)

@@ -98,6 +98,8 @@ from routers.workspace import router as workspace_router
 from routers.tenant_admin import router as tenant_admin_router
 from routers.jobs import router as jobs_router
 from routers.intelligence import router as intelligence_router
+from routers.onboarding import router as onboarding_router
+from routers.beta import router as beta_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -309,7 +311,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAPID Organization OS",
-    description="Governed autonomous workflows for organization-wide operations",
+    description="Governed, evidence-aware workflows for startup operations",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -360,10 +362,14 @@ app.include_router(database_router)
 app.include_router(llm_router)
 app.include_router(monitoring_router)
 app.include_router(sessions_router)
-app.include_router(onedrive_router)
-app.include_router(gmail_router)
-app.include_router(gdrive_router)
-app.include_router(github_router)
+# Older direct OAuth connectors store user-scoped tokens and bypass the tenant
+# governed ingestion path. Keep them unavailable by default while supported
+# tenant-scoped adapters are migrated into the integration hub.
+if os.getenv("RAPID_ENABLE_LEGACY_CLOUD_CONNECTORS", "false").lower() in {"1", "true", "yes"}:
+    app.include_router(onedrive_router)
+    app.include_router(gmail_router)
+    app.include_router(gdrive_router)
+    app.include_router(github_router)
 app.include_router(admin_folders_router)
 app.include_router(departments_router)
 app.include_router(backup_router)
@@ -394,6 +400,8 @@ app.include_router(workspace_router)
 app.include_router(tenant_admin_router)
 app.include_router(jobs_router)
 app.include_router(intelligence_router)
+app.include_router(onboarding_router)
+app.include_router(beta_router)
 
 # Digital Organization — HR, IT, Finance, Marketing (built departments)
 app.include_router(hr_router)
@@ -402,22 +410,35 @@ app.include_router(finance_router)
 app.include_router(marketing_router)
 app.include_router(org_router)
 
-# ── Frontend ─────────────────────────────────────────────────────────────────
-# The React app (frontend/) is the only UI. It is never served by this process:
-# dev runs it on its own Vite server (npm run dev --prefix frontend, port 4173,
-# calling this API directly at :8000 — see start.sh); production builds it to
-# frontend/dist and nginx serves those static files + proxies /api/* here (see
-# nginx/nginx.conf, docker-compose.yml). This root route exists only so hitting
-# the bare API URL doesn't 404 — it does not serve any HTML.
+# ── Product portal handoff ────────────────────────────────────────────────────
+# The React app (frontend/) is the only UI — this process never serves any
+# HTML itself. Dev runs it on its own Vite server (npm run dev --prefix
+# frontend, port 4173, calling this API directly at :8000 — see start.sh);
+# production builds it to frontend/dist and nginx serves those static files +
+# proxies /api/* here (see nginx/nginx.conf, docker-compose.yml).
+from fastapi.responses import RedirectResponse
+
+
+def _portal_url() -> str:
+    """Return the React portal origin for local development or deployment."""
+    default = "/" if os.getenv("RAPID_ENV", "development") == "production" else "http://127.0.0.1:4173"
+    return os.getenv("RAPID_PORTAL_URL", default).rstrip("/")
+
 
 @app.get("/", include_in_schema=False)
 async def _root():
-    return {"service": "rapid-api", "docs": "/docs"}
+    return RedirectResponse(url=f"{_portal_url()}/login")
+
+
+@app.get("/app/{legacy_path:path}", include_in_schema=False)
+async def _legacy_product_redirect(legacy_path: str):
+    """Retire the original static department consoles in favor of one portal."""
+    return RedirectResponse(url=f"{_portal_url()}/workspace/overview")
 
 
 # ── Main query endpoint ───────────────────────────────────────────────────────
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query", response_model=QueryResponse, deprecated=True)
 @limiter.limit("30/minute")
 async def query(
     request:          Request,
@@ -426,10 +447,14 @@ async def query(
     current_user:     dict = Depends(get_current_user),
 ):
     """
-    Full query pipeline — JWT Bearer auth required.
+    Backward-compatible raw agent query endpoint — JWT Bearer auth required.
+    Product surfaces use /intelligence/ask, which resolves shared scope,
+    permissions, evidence, and specialist routing first.
     Rate limited: 30 queries/minute per IP.
     Times out after 120 seconds.
     """
+    if os.getenv("RAPID_ENABLE_LEGACY_INTELLIGENCE", "false" if os.getenv("RAPID_ENV", "development") == "production" else "true").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=410, detail="This endpoint has been retired. Use /intelligence/ask.")
     # Enforce max query length
     if len(req.query) > 2000:
         raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
@@ -457,6 +482,8 @@ async def ask(
     req:          QueryRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    if os.getenv("RAPID_ENABLE_LEGACY_INTELLIGENCE", "false" if os.getenv("RAPID_ENV", "development") == "production" else "true").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=410, detail="This endpoint has been retired. Use /intelligence/ask.")
     if len(req.query) > 2000:
         raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
 
@@ -468,15 +495,24 @@ async def ask(
 
     query_id = str(uuid.uuid4())
 
-    # Departments this user may search: from the JWT depts claim; privileged
-    # roles (and users with no dept restriction) search everything indexed.
+    # Departments this user may search: privileged roles see the tenant-wide
+    # index. Everyone else fails closed to their explicit JWT department claim.
     # Indexes are tenant-scoped on disk: data/faiss/{tenant}/{dept}.
     tenant_id = current_user.get("tenant_id", "default")
-    faiss_root = Path("data/faiss") / tenant_id
-    indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
+    # The RAG pipeline resolves BM25 and vector stores through this tenant context.
+    # Bind it before routing so legacy /ask cannot fall back to default-tenant data.
+    from infrastructure.db_master import set_current_tenant
+    set_current_tenant(tenant_id)
+    use_qdrant = os.getenv("USE_QDRANT", "").lower() in {"true", "1", "yes"}
+    if use_qdrant:
+        from infrastructure.people_ops_store import DEPARTMENTS
+        indexed = sorted(DEPARTMENTS)
+    else:
+        faiss_root = Path("data/faiss") / tenant_id
+        indexed = sorted(d.name for d in faiss_root.iterdir() if d.is_dir()) if faiss_root.exists() else []
     role  = current_user.get("role", "employee")
     depts = current_user.get("depts") or []
-    if role in ("admin", "ceo", "board_member") or not depts:
+    if role in ("admin", "ceo", "board_member"):
         candidates = indexed
     else:
         candidates = [d for d in indexed if d in depts]
@@ -496,7 +532,7 @@ async def ask(
         if model not in emb_cache:
             emb_cache[model] = await embedder.embed(req.query, model=model)
         idx = get_dept_index(d, dim=embedder.dim_for_model(model), tenant_id=tenant_id)
-        if idx.doc_count == 0:
+        if not use_qdrant and idx.doc_count == 0:
             continue
         hits = await idx.vector_search(emb_cache[model], top_k=1)
         if hits and hits[0][1] > best_score:
@@ -517,6 +553,7 @@ async def ask(
 
     get_audit().log_query({
         "query_id": query_id, "user_id": current_user["sub"],
+        "tenant_id": tenant_id,
         "raw_query": req.query, "timestamp": datetime.utcnow().isoformat(),
         "intent_class": "ASK_RAG", "depts_activated": [best_dept],
         "composite_confidence": result.confidence, "action_taken": "ask_rag",
@@ -532,4 +569,3 @@ async def ask(
         action_taken="ask_rag",
         provider_used=getattr(get_llm(), "provider_id", "auto"),
     )
-

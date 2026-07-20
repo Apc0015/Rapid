@@ -7,6 +7,7 @@ import type {
   NotificationItem,
   Readiness,
   TenantConfiguration,
+  TenantFeature,
   WorkspaceData,
   WorkspaceOverview,
   BusinessRecord,
@@ -30,13 +31,14 @@ export function useWorkspaceData(includeRead: boolean): WorkspaceState {
     setLoading(true);
     setError('');
     try {
-      const [overview, meetings, actions, records, notifications, configuration, readiness, jobs] = await Promise.all([
+      const [overview, meetings, actions, records, notifications, configuration, features, readiness, jobs] = await Promise.all([
         apiRequest<WorkspaceOverview>('/workspace/overview'),
         apiRequest<{ meetings: Meeting[] }>('/workspace/meetings'),
         apiRequest<{ actions: ActionItem[] }>('/workspace/actions'),
         apiRequest<{ records: BusinessRecord[] }>('/workspace/records'),
         apiRequest<{ notifications: NotificationItem[] }>(`/workspace/notifications?include_read=${includeRead}`),
         apiRequest<TenantConfiguration>('/tenant-admin/configuration').catch(() => null),
+        apiRequest<{ features: TenantFeature[] }>('/tenant-admin/features'),
         apiRequest<Readiness>('/health/ready').catch(() => null),
         apiRequest<JobsResponse>('/jobs?limit=10').catch(() => null),
       ]);
@@ -47,6 +49,7 @@ export function useWorkspaceData(includeRead: boolean): WorkspaceState {
         records: records.records,
         notifications: notifications.notifications,
         configuration,
+        features: features.features,
         readiness,
         jobs,
       });

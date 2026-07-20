@@ -1,18 +1,32 @@
-import { ArrowUp, Bot, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowUp, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { apiRequest } from '../../lib/api';
-import type { IntelligenceAnswer } from '../../types';
 import type { WorkspaceView } from '../../constants';
 
 interface IntelligenceDockProps {
   view: WorkspaceView;
+  onOpenChat: (prompt: string, context: WorkspaceView) => void;
 }
 
-export function IntelligenceDock({ view }: IntelligenceDockProps) {
+const CONTEXT: Record<WorkspaceView, { placeholder: string; suggestions: string[] }> = {
+  overview: { placeholder: 'Ask RAPID for a grounded startup update', suggestions: ['Give me the startup operating picture', 'What needs attention today?', 'What should I focus on?'] },
+  meetings: { placeholder: 'Ask RAPID about meetings and decisions', suggestions: ['What meetings need preparation?', 'What decisions are pending?', 'Summarize the meeting cadence'] },
+  actions: { placeholder: 'Ask RAPID about commitments and owners', suggestions: ['What needs attention today?', 'Which actions are overdue?', 'Who owns the highest-priority work?'] },
+  people: { placeholder: 'Ask RAPID about people and capacity', suggestions: ['What should I know about team capacity?', 'Summarize the people directory', 'What needs attention today?'] },
+  crm: { placeholder: 'Ask RAPID about customers and revenue', suggestions: ['Which customers need attention?', 'Summarize customer health', 'What is at risk this quarter?'] },
+  projects: { placeholder: 'Ask RAPID about delivery and risk', suggestions: ['Which projects need attention?', 'Summarize delivery risk', 'What is blocking progress?'] },
+  tickets: { placeholder: 'Ask RAPID about service issues', suggestions: ['Which issues are most urgent?', 'Summarize active issues', 'What is blocking resolution?'] },
+  departments: { placeholder: 'Ask RAPID about a work area', suggestions: ['How are the work areas operating?', 'Which work area needs attention?', 'What should I focus on?'] },
+  chat: { placeholder: 'Ask RAPID about your startup', suggestions: [] },
+  reports: { placeholder: 'Ask RAPID about reporting', suggestions: [] },
+  library: { placeholder: 'Ask RAPID about the knowledge library', suggestions: [] },
+  search: { placeholder: 'Ask RAPID about connected records', suggestions: [] },
+  notifications: { placeholder: 'Ask RAPID about operating signals', suggestions: ['What needs attention today?', 'Summarize the operating signals', 'What should I focus on?'] },
+  settings: { placeholder: 'Ask RAPID about this workspace', suggestions: [] },
+};
+
+export function IntelligenceDock({ view, onOpenChat }: IntelligenceDockProps) {
+  const context = CONTEXT[view];
   const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState<IntelligenceAnswer | null>(null);
-  const [pending, setPending] = useState(false);
-  const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -23,67 +37,30 @@ export function IntelligenceDock({ view }: IntelligenceDockProps) {
       event.preventDefault();
       inputRef.current?.focus();
     }
-
     window.addEventListener('keydown', focusQuestion);
     return () => window.removeEventListener('keydown', focusQuestion);
   }, []);
 
-  async function ask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const prompt = question.trim();
-    if (!prompt || pending) return;
-    setPending(true);
-    setOpen(true);
-    try {
-      const response = await apiRequest<IntelligenceAnswer>('/intelligence/ask', {
-        method: 'POST',
-        body: JSON.stringify({ question: prompt, workspace_view: view }),
-      });
-      setAnswer(response);
-    } catch (issue) {
-      setAnswer({
-        id: 'local-error', answer: issue instanceof Error ? issue.message : 'RAPID could not complete this request.',
-        confidence: 0, warning: 'Try again after confirming your organization AI runtime.', departments: [],
-        action: 'error', mode: 'scoped_evidence_fallback', evidence: [],
-      });
-    } finally {
-      setPending(false);
-    }
+  function openConversation(prompt: string) {
+    const normalized = prompt.trim();
+    if (!normalized) return;
+    onOpenChat(normalized, view);
   }
 
-  function reset() {
-    setAnswer(null);
-    setQuestion('');
-    setOpen(false);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    openConversation(question);
   }
 
   return (
-    <section className={`intelligence-dock${open ? ' open' : ''}`} aria-label="RAPID intelligence">
-      <form className="intelligence-prompt" onSubmit={ask}>
+    <section className="intelligence-dock" aria-label="Ask RAPID about this workspace area">
+      <form className="intelligence-prompt" onSubmit={submit}>
         <div className="intelligence-mark"><Sparkles size={15} aria-hidden="true" /></div>
-        <input
-          id="intelligence-question"
-          ref={inputRef}
-          value={question}
-          onFocus={() => setOpen(true)}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder={`Ask RAPID about this ${view === 'overview' ? 'organization' : view.replace('_', ' ')}`}
-          aria-label="Ask RAPID"
-          aria-keyshortcuts="/"
-          maxLength={2000}
-        />
-        {open && (answer || question) ? <button className="icon-button intelligence-reset" type="button" onClick={reset} title="Clear intelligence response" aria-label="Clear intelligence response"><RotateCcw size={14} /></button> : null}
-        <button className="intelligence-submit" type="submit" aria-label="Ask RAPID" disabled={!question.trim() || pending}>
-          {pending ? <Bot size={15} className="intelligence-thinking" aria-hidden="true" /> : <ArrowUp size={15} aria-hidden="true" />}
-        </button>
+        <input id="intelligence-question" ref={inputRef} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={context.placeholder} aria-label="Ask RAPID" aria-keyshortcuts="/" maxLength={2000} />
+        <button className="intelligence-submit" type="submit" aria-label="Open RAPID chat" disabled={!question.trim()}><ArrowUp size={15} aria-hidden="true" /></button>
       </form>
-      {open && (pending || answer) ? <div className="intelligence-result" aria-live="polite">
-        {pending ? <p className="intelligence-pending"><Bot size={15} aria-hidden="true" /> Preparing a governed response</p> : null}
-        {answer ? <>
-          <div className="intelligence-response"><p>{answer.answer}</p><div className="intelligence-meta"><span>{answer.mode === 'agent_engine' ? 'Agent response' : 'Scoped evidence'}</span>{answer.confidence ? <span>{Math.round(answer.confidence * 100)}% confidence</span> : null}{answer.departments.length ? <span>{answer.departments.join(', ').replaceAll('_', ' ')}</span> : null}</div></div>
-          {answer.evidence.length ? <details className="intelligence-evidence"><summary>{answer.evidence.length} approved source{answer.evidence.length === 1 ? '' : 's'}</summary><ul>{answer.evidence.map((item, index) => <li key={`${item.title}-${index}`}><strong>{item.title}</strong><span>{item.excerpt}</span></li>)}</ul></details> : null}
-          {answer.warning ? <p className="intelligence-warning">{answer.warning}</p> : null}
-        </> : null}
+      {context.suggestions.length ? <div className="intelligence-suggestions" aria-label="Suggested questions">
+        {context.suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => openConversation(suggestion)}>{suggestion}</button>)}
       </div> : null}
     </section>
   );

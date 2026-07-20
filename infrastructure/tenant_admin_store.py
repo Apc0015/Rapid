@@ -9,6 +9,13 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+from infrastructure.organization_profiles import (
+    resolve_profile,
+    validate_departments,
+    validate_features,
+)
 
 
 FEATURES = {
@@ -20,6 +27,8 @@ FEATURES = {
     "reports": "Department reports",
     "projects": "Projects and delivery",
     "people": "People directory",
+    "crm": "Customer operations",
+    "tickets": "Service operations",
 }
 MODEL_PROVIDERS = {"ollama", "openrouter"}
 CONNECTION_KINDS = {"database", "sso", "integration", "storage", "email"}
@@ -65,6 +74,13 @@ class TenantAdminStore:
                     role TEXT NOT NULL, departments_json TEXT NOT NULL, status TEXT NOT NULL,
                     created_at TEXT NOT NULL, UNIQUE(tenant_id, email)
                 );
+                CREATE TABLE IF NOT EXISTS tenant_operating_profiles (
+                    tenant_id TEXT PRIMARY KEY,
+                    profile_key TEXT NOT NULL,
+                    deployment_mode TEXT NOT NULL,
+                    departments_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -103,6 +119,90 @@ class TenantAdminStore:
         finally:
             conn.close()
 
+    def operating_profile(self, tenant_id: str) -> dict[str, Any]:
+        """Return the tenant's governing operating and AI deployment policy."""
+        self.ensure_tenant(tenant_id)
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM tenant_operating_profiles WHERE tenant_id=?", (tenant_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            # Existing demo tenants retain the full organization experience until
+            # an administrator chooses a tailored profile.
+            profile = resolve_profile("established_organization", "cloud")
+            return {
+                "profile_key": profile["profile_key"],
+                "name": profile["name"],
+                "description": profile["description"],
+                "deployment_mode": profile["deployment_mode"],
+                "deployment_policy": profile["deployment_policy"],
+                "departments": profile["departments"],
+                "configured": False,
+            }
+        profile = resolve_profile(row["profile_key"], row["deployment_mode"])
+        return {
+            "profile_key": profile["profile_key"],
+            "name": profile["name"],
+            "description": profile["description"],
+            "deployment_mode": profile["deployment_mode"],
+            "deployment_policy": profile["deployment_policy"],
+            "departments": json.loads(row["departments_json"]),
+            "configured": True,
+            "updated_at": row["updated_at"],
+        }
+
+    def apply_operating_profile(
+        self,
+        tenant_id: str,
+        *,
+        profile_key: str,
+        deployment_mode: str,
+        departments: list[str] | None = None,
+        features: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Apply a profile as tenant configuration, including AI provider guardrails."""
+        try:
+            profile = resolve_profile(profile_key, deployment_mode)
+            selected_departments = validate_departments(departments or profile["departments"])
+            selected_features = validate_features(features if features is not None else profile["features"])
+        except ValueError as error:
+            raise TenantAdminError(str(error)) from error
+        self.ensure_tenant(tenant_id)
+        now = self._now()
+        allowed_providers = set(profile["deployment_policy"]["allowed_providers"])
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN")
+            conn.execute(
+                """INSERT INTO tenant_operating_profiles VALUES (?,?,?,?,?)
+                   ON CONFLICT(tenant_id) DO UPDATE SET profile_key=excluded.profile_key,
+                   deployment_mode=excluded.deployment_mode, departments_json=excluded.departments_json,
+                   updated_at=excluded.updated_at""",
+                (tenant_id, profile_key, deployment_mode, json.dumps(selected_departments), now),
+            )
+            for key in FEATURES:
+                conn.execute(
+                    "UPDATE tenant_features SET enabled=?, updated_at=? WHERE tenant_id=? AND feature_key=?",
+                    (int(key in selected_features), now, tenant_id, key),
+                )
+            conn.execute("UPDATE tenant_models SET enabled=0, updated_at=? WHERE tenant_id=?", (now, tenant_id))
+            if "ollama" in allowed_providers:
+                conn.execute(
+                    "UPDATE tenant_models SET enabled=1, updated_at=? WHERE tenant_id=? AND provider='ollama'",
+                    (now, tenant_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        self._sync_llm_runtime(tenant_id, "ollama", "llama3.1:8b", "http://localhost:11434", "")
+        return self.operating_profile(tenant_id)
+
     @staticmethod
     def _sync_llm_runtime(tenant_id: str, provider: str, model_name: str, endpoint: str, credential_ref: str) -> None:
         """Persist the selected provider for request-time tenant LLM routing."""
@@ -137,9 +237,81 @@ class TenantAdminStore:
                 connection["enabled"] = bool(connection["enabled"])
                 connection["configuration"] = json.loads(connection.pop("configuration_json") or "{}")
                 connection["credential_configured"] = bool(connection.pop("credential_ref"))
-            return {"features": features, "models": models, "connections": connections}
+            return {
+                "features": features,
+                "models": models,
+                "connections": connections,
+                "operating_profile": self.operating_profile(tenant_id),
+                "trust_summary": self.trust_summary(tenant_id, models=models, connections=connections),
+            }
         finally:
             conn.close()
+
+    def trust_summary(
+        self,
+        tenant_id: str,
+        *,
+        models: list[dict[str, Any]] | None = None,
+        connections: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Return safe, customer-facing controls for the tenant workspace.
+
+        This is deliberately a status summary, not a compliance claim. It lets a
+        founder see which boundary is active before connecting production data.
+        """
+        profile = self.operating_profile(tenant_id)
+        if models is None or connections is None:
+            configuration = self.configuration(tenant_id)
+            models = configuration["models"]
+            connections = configuration["connections"]
+        active_model = next((model for model in models if model["enabled"]), None)
+        live_connections = [item for item in connections if item["enabled"] and item["status"] == "configured"]
+        try:
+            from infrastructure.integration_hub import get_integration_hub
+            governed_live_connections = [
+                item for item in get_integration_hub().list_connections(tenant_id)
+                if item["status"] == "connected"
+            ]
+        except Exception as error:
+            logger.warning("Integration trust summary unavailable for %s: %s", tenant_id, error)
+            governed_live_connections = []
+        live_connection_count = len(live_connections) + len(governed_live_connections)
+        policy = profile["deployment_policy"]
+        boundary_status = "restricted" if policy["cloud_egress"] == "blocked" else "controlled"
+        return {
+            "boundary": {
+                "status": boundary_status,
+                "title": policy["name"],
+                "detail": f"Data boundary: {policy['data_residency']}. Cloud egress: {policy['cloud_egress']}.",
+            },
+            "runtime": {
+                "status": "configured" if active_model else "attention",
+                "title": "AI runtime",
+                "detail": (
+                    f"{active_model['provider'].title()} is the active tenant runtime."
+                    if active_model else "No tenant AI runtime is enabled."
+                ),
+            },
+            "connections": {
+                "status": "connected" if live_connection_count else "sandbox",
+                "title": "Connected data",
+                "detail": (
+                    f"{live_connection_count} customer-managed connection"
+                    f"{'s are' if live_connection_count != 1 else ' is'} enabled."
+                    if live_connection_count else "Only synthetic sample data is active. Production systems are not connected."
+                ),
+            },
+            "evidence": {
+                "status": "visible",
+                "title": "Answer traceability",
+                "detail": "RAPID Chat identifies scope, confidence, and available supporting evidence.",
+            },
+            "approvals": {
+                "status": "required",
+                "title": "Human control",
+                "detail": "Consequential generated work remains in review until an accountable user approves it.",
+            },
+        }
 
     def update_feature(self, tenant_id: str, key: str, enabled: bool) -> dict[str, Any]:
         if key not in FEATURES:
@@ -153,6 +325,21 @@ class TenantAdminStore:
         finally:
             conn.close()
 
+    def feature_manifest(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return tenant feature visibility without exposing configuration or credentials."""
+        self.ensure_tenant(tenant_id)
+        conn = self._connect()
+        try:
+            return [
+                {"key": row["feature_key"], "enabled": bool(row["enabled"])}
+                for row in conn.execute(
+                    "SELECT feature_key, enabled FROM tenant_features WHERE tenant_id=? ORDER BY feature_key",
+                    (tenant_id,),
+                )
+            ]
+        finally:
+            conn.close()
+
     def update_model(self, tenant_id: str, provider: str, enabled: bool, model_name: str, endpoint: str, credential_ref: str) -> dict[str, Any]:
         if provider not in MODEL_PROVIDERS:
             raise TenantAdminError("Unsupported model provider")
@@ -160,6 +347,12 @@ class TenantAdminStore:
             raise TenantAdminError("Model configuration exceeds the allowed length")
         if enabled and provider == "openrouter" and not credential_ref.strip():
             raise TenantAdminError("OpenRouter requires a secret-manager credential reference when enabled")
+        policy = self.operating_profile(tenant_id)["deployment_policy"]
+        if enabled and provider not in policy["allowed_providers"]:
+            raise TenantAdminError(
+                f"{provider.title()} is blocked by this tenant's {policy['name']} policy"
+            )
+        self._validate_model_endpoint(provider, endpoint)
         self.ensure_tenant(tenant_id)
         conn = self._connect()
         try:
@@ -172,6 +365,19 @@ class TenantAdminStore:
         if enabled:
             self._sync_llm_runtime(tenant_id, provider, model_name.strip(), endpoint.strip(), credential_ref.strip())
         return [item for item in self.configuration(tenant_id)["models"] if item["provider"] == provider][0]
+
+    @staticmethod
+    def _validate_model_endpoint(provider: str, endpoint: str) -> None:
+        parsed = urlparse(endpoint.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise TenantAdminError("AI runtime endpoint must be a valid HTTP(S) URL")
+        is_local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if provider == "ollama" and is_local:
+            return
+        if parsed.scheme != "https":
+            raise TenantAdminError("Remote AI runtime endpoints must use HTTPS")
+        if provider == "openrouter" and parsed.hostname != "openrouter.ai":
+            raise TenantAdminError("OpenRouter endpoint must use openrouter.ai")
 
     def active_model_runtime(self, tenant_id: str) -> dict[str, Any]:
         """Internal runtime configuration; credential references are never returned by API serializers."""

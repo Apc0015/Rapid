@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS users (
     project_access        TEXT    DEFAULT '{}',
     db_mode_enabled       INTEGER DEFAULT 0,
     division              TEXT    DEFAULT '',
+    tenant_id             TEXT    DEFAULT 'default',
     created_at            TEXT    DEFAULT '',
     created_by            TEXT    DEFAULT ''
 );
@@ -180,6 +181,9 @@ def _db_connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(_USER_DB_SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "tenant_id" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT DEFAULT 'default'")
     conn.commit()
     return conn
 
@@ -206,8 +210,8 @@ def _db_upsert_user(conn: sqlite3.Connection, login_key: str, data: dict) -> Non
         """INSERT OR REPLACE INTO users
            (login_key, name, role, department, email, employee_id,
             rapid_user_id, password_hash, permitted_departments,
-            project_access, db_mode_enabled, division, created_at, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            project_access, db_mode_enabled, division, tenant_id, created_at, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             login_key,
             data.get("name", ""),
@@ -221,6 +225,7 @@ def _db_upsert_user(conn: sqlite3.Connection, login_key: str, data: dict) -> Non
             json.dumps(data.get("project_access", {})),
             int(bool(data.get("db_mode_enabled", False))),
             data.get("division", ""),
+            data.get("tenant_id", "default"),
             data.get("created_at", ""),
             data.get("created_by", ""),
         ),
@@ -364,6 +369,64 @@ def _build_login_key(employee_name: str, existing_users: dict) -> str:
     while f"{base}{i}" in existing_users:
         i += 1
     return f"{base}{i}"
+
+
+def create_tenant_owner(
+    *,
+    owner_name: str,
+    owner_email: str,
+    password: str,
+    tenant_id: str,
+    permitted_departments: list[str],
+) -> dict:
+    """Create the first CEO account during organization provisioning.
+
+    This is deliberately separate from employee access requests: a tenant owner
+    has no existing department approvers and must be bound to the new tenant at
+    creation time.
+    """
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if not owner_name.strip() or not owner_email or "@" not in owner_email:
+        raise ValueError("A valid owner name and work email are required")
+    if not tenant_id.strip() or any(dept not in ALL_DEPTS for dept in permitted_departments):
+        raise ValueError("Tenant and permitted departments are invalid")
+    users = _load_users()
+    normalized_email = owner_email.strip().lower()
+    if any(user.get("email", "").lower() == normalized_email for user in users.values()):
+        raise ValueError("An account with this email already exists")
+    registry = _load()
+    login_key = _build_login_key(owner_name, users)
+    owner = {
+        "password_hash": hash_password(password),
+        "role": "ceo",
+        "name": owner_name.strip(),
+        "email": normalized_email,
+        "employee_id": "owner",
+        "rapid_user_id": _next_usr_id(registry),
+        "permitted_departments": list(dict.fromkeys(permitted_departments)),
+        "project_access": {},
+        "db_mode_enabled": False,
+        "tenant_id": tenant_id,
+        "created_by": "self_service_provisioning",
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    users[login_key] = owner
+    _save_users(users)
+    _save(registry)
+    logger.info("[provision] Tenant owner %s created for tenant=%s", login_key, tenant_id)
+    return {key: value for key, value in owner.items() if key != "password_hash"} | {"login_key": login_key}
+
+
+def set_provisioned_password(login_key: str, new_password: str) -> None:
+    """Set the initial password after a separately verified activation flow."""
+    if len(new_password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    users = _load_users()
+    if login_key not in users:
+        raise ValueError("Account not found")
+    users[login_key]["password_hash"] = hash_password(new_password)
+    _save_users(users)
 
 # ── Division management ───────────────────────────────────────────────────────
 
@@ -870,6 +933,7 @@ def list_portal_users() -> list[dict]:
             "employee_id":           u.get("employee_id", ""),
             "role":                  u.get("role", "employee"),
             "division":              u.get("division"),
+            "tenant_id":             u.get("tenant_id", "default"),
             "permitted_departments": u.get("permitted_departments", []),
             "project_access":        u.get("project_access", {}),
             "db_mode_enabled":       u.get("db_mode_enabled", False),

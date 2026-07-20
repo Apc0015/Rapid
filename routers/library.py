@@ -31,6 +31,33 @@ def _get_tenant(current_user: dict) -> str:
     return current_user.get("tenant_id") or current_user.get("sub", "default")
 
 
+def _accessible_project_ids(current_user: dict) -> set[str]:
+    """Resolve project membership once for document-library permission checks."""
+    if current_user.get("role") in {"admin", "ceo"}:
+        return set()
+    import config
+    import sqlite3
+    conn = sqlite3.connect(config.DB_PATH, timeout=10)
+    try:
+        rows = conn.execute(
+            "SELECT project_id FROM project_members WHERE tenant_id=? AND user_id=? AND status='active'",
+            (_get_tenant(current_user), current_user["sub"]),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+    finally:
+        conn.close()
+
+
+def _document_is_visible(document, current_user: dict, project_ids: set[str] | None = None) -> bool:
+    if current_user.get("role") in {"admin", "ceo"}:
+        return True
+    allowed_departments = set(current_user.get("depts") or [])
+    if getattr(document, "dept_id", None) and document.dept_id in allowed_departments:
+        return True
+    ids = project_ids if project_ids is not None else _accessible_project_ids(current_user)
+    return bool(getattr(document, "project_id", None) and document.project_id in ids)
+
+
 # ── Request models ────────────────────────────────────────────────────────────
 
 class RegisterDocRequest(BaseModel):
@@ -77,9 +104,11 @@ async def list_library(
         limit       = limit,
         offset      = offset,
     )
+    project_ids = _accessible_project_ids(current_user)
+    visible_docs = [d for d in docs if _document_is_visible(d, current_user, project_ids)]
     return {
-        "documents": [d.to_dict() for d in docs],
-        "count":     len(docs),
+        "documents": [d.to_dict() for d in visible_docs],
+        "count":     len(visible_docs),
         "offset":    offset,
         "filters": {
             "project_id":  project_id,
@@ -97,9 +126,11 @@ async def library_stats(
     """Return library statistics — total docs, by format, total size."""
     tenant_id = _get_tenant(current_user)
     library   = get_document_library()
+    docs = library.list(tenant_id=tenant_id, limit=200)
+    visible_docs = [d for d in docs if _document_is_visible(d, current_user)]
     return {
         "tenant_id": tenant_id,
-        **library.stats(tenant_id),
+        "total_documents": len(visible_docs),
     }
 
 
@@ -113,10 +144,11 @@ async def search_library(
     tenant_id = _get_tenant(current_user)
     library   = get_document_library()
     docs      = library.search(tenant_id=tenant_id, query=q, limit=limit)
+    visible_docs = [d for d in docs if _document_is_visible(d, current_user)]
     return {
         "query":     q,
-        "documents": [d.to_dict() for d in docs],
-        "count":     len(docs),
+        "documents": [d.to_dict() for d in visible_docs],
+        "count":     len(visible_docs),
     }
 
 
@@ -128,8 +160,8 @@ async def sync_from_projects(
     Scan all active project DBs and pull their project_documents records
     into the central library. Admin/manager only.
     """
-    if current_user.get("role") not in ("admin", "manager", "c_suite", "ceo"):
-        raise HTTPException(status_code=403, detail="Admin role required")
+    if current_user.get("role") not in ("admin", "ceo"):
+        raise HTTPException(status_code=403, detail="Tenant administrator access required")
 
     import sqlite3
     import config
@@ -174,7 +206,7 @@ async def get_document(
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found")
 
     tenant_id = _get_tenant(current_user)
-    if doc.tenant_id != tenant_id and current_user.get("role") != "admin":
+    if doc.tenant_id != tenant_id or not _document_is_visible(doc, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return {"document": doc.to_dict()}
@@ -191,6 +223,11 @@ async def delete_document(
         raise HTTPException(status_code=403, detail="Manager role required")
 
     library = get_document_library()
+    document = library.get(doc_id)
+    if not document:
+        raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found")
+    if document.tenant_id != _get_tenant(current_user) or not _document_is_visible(document, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
     success = library.delete(doc_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found")
@@ -207,6 +244,9 @@ async def register_document(
     if current_user.get("role") not in ("admin", "manager", "dept_head",
                                          "c_suite", "ceo"):
         raise HTTPException(status_code=403, detail="Manager role required")
+    allowed_departments = set(current_user.get("depts") or [])
+    if current_user.get("role") not in {"admin", "ceo"} and req.dept_id and req.dept_id not in allowed_departments:
+        raise HTTPException(status_code=403, detail="You cannot register a document outside your department scope")
 
     tenant_id = _get_tenant(current_user)
     library   = get_document_library()

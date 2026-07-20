@@ -17,8 +17,7 @@ export function getApiBaseUrl(): string {
   if (window.RAPID_API_URL) return window.RAPID_API_URL.replace(/\/$/, '');
   const configured = document.querySelector<HTMLMetaElement>('meta[name="rapid-api"]')?.content;
   if (configured) return configured.replace(/\/$/, '');
-  if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return `${window.location.origin}/api`;
-  return 'http://localhost:8000';
+  return import.meta.env.DEV ? 'http://localhost:8000' : `${window.location.origin}/api`;
 }
 
 export function getToken(): string {

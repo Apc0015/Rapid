@@ -2,7 +2,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LoadingState } from '../components/StatusTag';
 import { useToast } from '../components/ToastProvider';
-import { isWorkspaceView, type WorkspaceView } from '../constants';
+import { isWorkspaceView, VIEW_FEATURES, type WorkspaceView } from '../constants';
 import { MeetingDialogs } from '../features/workspace/MeetingDialogs';
 import { useWorkspaceData } from '../features/workspace/useWorkspaceData';
 import { WORKSPACE_VIEW_COMPONENTS, type WorkspaceViewProps } from '../features/workspace/WorkspaceViews';
@@ -27,6 +27,14 @@ export function WorkspacePage() {
   useEffect(() => {
     if (!isWorkspaceView(routeView)) navigateRouter('/workspace/overview', { replace: true });
   }, [navigateRouter, routeView]);
+
+  useEffect(() => {
+    const requiredFeature = VIEW_FEATURES[view];
+    if (data && requiredFeature && !data.features.some((feature) => feature.key === requiredFeature && feature.enabled)) {
+      navigateRouter('/workspace/overview', { replace: true });
+      notify('This module is not enabled for this organization.');
+    }
+  }, [data, navigateRouter, notify, view]);
 
   function navigate(nextView: WorkspaceView) {
     navigateRouter(`/workspace/${nextView}`);
@@ -119,6 +127,12 @@ export function WorkspacePage() {
     navigateRouter('/login', { replace: true });
   }
 
+  function openRapidChat(prompt: string, context: WorkspaceView) {
+    navigateRouter(`/workspace/chat?prompt=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}`);
+    setNavigationOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   if (loading && !data) return <main className="product-page boot-state"><div className="boot-brand"><span>R</span><strong>RAPID</strong></div><LoadingState /></main>;
   if (error && !data) return <main className="product-page boot-state"><div className="portal-error"><strong>RAPID could not load this workspace.</strong><p id="portal-error-message">{error}</p><button id="retry-load" className="product-button secondary" type="button" onClick={() => void load()}>Retry</button></div></main>;
   if (!data) return null;
@@ -141,7 +155,7 @@ export function WorkspacePage() {
 
   return (
     <>
-      <WorkspaceShell overview={data.overview} view={view} notificationCount={unread} navigationOpen={navigationOpen} onNavigate={navigate} onNavigationOpen={setNavigationOpen} onReset={() => void resetDemo()} onPrimaryAction={primaryAction} onSignOut={signOut}>
+      <WorkspaceShell overview={data.overview} view={view} notificationCount={unread} features={data.features} navigationOpen={navigationOpen} onNavigate={navigate} onNavigationOpen={setNavigationOpen} onReset={() => void resetDemo()} onPrimaryAction={primaryAction} onOpenChat={openRapidChat} onSignOut={signOut}>
         <ViewComponent {...viewProps} />
       </WorkspaceShell>
       <MeetingDialogs selectedMeeting={selectedMeeting} meetingOpen={meetingOpen} newMeetingOpen={newMeetingOpen} onMeetingClose={() => setMeetingOpen(false)} onNewMeetingClose={() => setNewMeetingOpen(false)} onSaveMeeting={saveMeeting} onCreateMeeting={createMeeting} onCreateAction={createAction} onChangeAction={changeAction} />

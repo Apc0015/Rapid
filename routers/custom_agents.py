@@ -15,8 +15,8 @@ Endpoints
   DELETE /agents/custom/{dept}/{agent_id}   → Remove agent (hard delete)
   POST   /agents/custom/{dept}/reload       → Hot-reload all custom agents for dept
 
-Auth: admin role required for create/update/delete/reload.
-      Any authenticated user can list/get.
+Auth: tenant administrator required for create/update/delete/reload.
+      Any authenticated user can list/get within their department scope.
 """
 
 import logging
@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from routers.deps import get_current_user, require_admin
+from infrastructure.people_ops_store import DEPARTMENTS
 from infrastructure.custom_agent_store import (
     create_custom_agent,
     get_custom_agent,
@@ -123,6 +124,31 @@ def _get_intra(dept: str):
     return None
 
 
+def _allowed_departments(current_user: dict) -> set[str]:
+    if current_user.get("role") in {"admin", "ceo"}:
+        return set(DEPARTMENTS)
+    return set(current_user.get("depts") or []) & set(DEPARTMENTS)
+
+
+def _tenant(current_user: dict) -> str:
+    return str(current_user.get("tenant_id") or "default")
+
+
+def _require_department_access(current_user: dict, dept: str) -> None:
+    if dept not in _allowed_departments(current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to this department")
+
+
+def _safe_agent_record(record: dict, current_user: dict) -> dict:
+    """Managers can inspect their team roster but not system prompts or data topology."""
+    if current_user.get("role") in {"admin", "ceo"}:
+        return record
+    safe = dict(record)
+    for key in ("system_prompt", "permitted_tables", "doc_folders", "tools_available", "bid_keywords"):
+        safe.pop(key, None)
+    return safe
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -133,7 +159,12 @@ async def list_all_custom_agents(
     current_user: dict = Depends(get_current_user),
 ):
     """List all custom agents across all departments."""
-    agents = list_custom_agents(active_only=active_only)
+    allowed = _allowed_departments(current_user)
+    agents = [
+        _safe_agent_record(agent, current_user)
+        for agent in list_custom_agents(_tenant(current_user), active_only=active_only)
+        if agent.get("dept_tag") in allowed
+    ]
     return {
         "custom_agents": agents,
         "count": len(agents),
@@ -149,20 +180,16 @@ async def list_dept_custom_agents(
 ):
     """List all custom agents for a specific department."""
     _validate_dept(dept)
-    agents = list_custom_agents(dept_tag=dept, active_only=active_only)
-
-    # Also show live status from the running orchestrator
-    intra = _get_intra(dept)
-    live_roles = set(intra.list_specialists()) if intra else set()
-
-    for a in agents:
-        a["is_live"] = a["role_title"] in live_roles
+    _require_department_access(current_user, dept)
+    agents = list_custom_agents(_tenant(current_user), dept_tag=dept, active_only=active_only)
+    for agent in agents:
+        agent["activation_status"] = "awaiting_tenant_runtime"
 
     return {
         "dept": dept,
-        "custom_agents": agents,
+        "custom_agents": [_safe_agent_record(agent, current_user) for agent in agents],
         "count": len(agents),
-        "live_specialist_count": len(live_roles) if intra else None,
+        "live_specialist_count": 0,
     }
 
 
@@ -175,11 +202,8 @@ async def create_dept_agent(
     """
     Create a new specialist agent for a department.
 
-    The agent is:
-    1. Persisted to the database.
-    2. Immediately injected into the live IntraDeptOrchestrator (hot-reload).
-
-    No restart required — the agent starts handling queries right away.
+    The configuration is persisted within the current tenant. It is activated
+    only by a tenant-aware agent runtime, never by the shared process registry.
 
     Example body:
     ```json
@@ -195,9 +219,11 @@ async def create_dept_agent(
     ```
     """
     _validate_dept(dept)
+    _require_department_access(current_user, dept)
 
     # Check for duplicate role_title in this dept
-    existing = list_custom_agents(dept_tag=dept, active_only=False)
+    tenant_id = _tenant(current_user)
+    existing = list_custom_agents(tenant_id, dept_tag=dept, active_only=False)
     if any(a["role_title"].lower() == req.role_title.lower() for a in existing):
         raise HTTPException(
             status_code=409,
@@ -206,6 +232,7 @@ async def create_dept_agent(
         )
 
     record = create_custom_agent(
+        tenant_id=tenant_id,
         dept_tag=dept,
         role_title=req.role_title,
         specialization=req.specialization,
@@ -217,23 +244,14 @@ async def create_dept_agent(
         created_by=current_user.get("sub", "admin"),
     )
 
-    # Hot-inject into the running orchestrator
-    injected = False
-    intra = _get_intra(dept)
-    if intra:
-        from agents.base.dynamic_employee_agent import DynamicEmployeeAgent
-        agent = DynamicEmployeeAgent(record)
-        intra.add_specialist(agent)
-        injected = True
-
     logger.info(
         f"[CustomAgents] Created '{req.role_title}' for dept={dept} "
-        f"by {current_user.get('sub','?')} | live_injected={injected}"
+        f"by {current_user.get('sub','?')} | activation=awaiting_tenant_runtime"
     )
 
     return {
         "message": f"Agent '{req.role_title}' created for dept '{dept}'.",
-        "live_injected": injected,
+        "activation_status": "awaiting_tenant_runtime",
         "agent": record,
     }
 
@@ -246,16 +264,14 @@ async def get_dept_agent(
 ):
     """Get the full config of one custom agent."""
     _validate_dept(dept)
-    record = get_custom_agent(agent_id)
+    _require_department_access(current_user, dept)
+    record = get_custom_agent(agent_id, _tenant(current_user))
     if not record or record["dept_tag"] != dept:
         raise HTTPException(status_code=404, detail="Agent not found in this department")
 
-    # Add live status
-    intra = _get_intra(dept)
-    if intra:
-        record["is_live"] = record["role_title"] in set(intra.list_specialists())
+    record["activation_status"] = "awaiting_tenant_runtime"
 
-    return {"agent": record}
+    return {"agent": _safe_agent_record(record, current_user)}
 
 
 @router.patch("/{dept}/{agent_id}")
@@ -267,25 +283,21 @@ async def update_dept_agent(
 ):
     """
     Update fields of an existing custom agent.
-    Changes are persisted and the live orchestrator is refreshed automatically.
+    Changes are persisted for the tenant-aware agent runtime.
     """
     _validate_dept(dept)
-    existing = get_custom_agent(agent_id)
+    _require_department_access(current_user, dept)
+    tenant_id = _tenant(current_user)
+    existing = get_custom_agent(agent_id, tenant_id)
     if not existing or existing["dept_tag"] != dept:
         raise HTTPException(status_code=404, detail="Agent not found in this department")
 
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    record = update_custom_agent(agent_id, **updates)
-
-    # Refresh the live orchestrator
-    intra = _get_intra(dept)
-    reloaded = 0
-    if intra:
-        reloaded = intra.reload_custom_agents()
+    record = update_custom_agent(agent_id, tenant_id, **updates)
 
     return {
         "message": f"Agent '{record['role_title']}' updated.",
-        "live_agents_reloaded": reloaded,
+        "activation_status": "awaiting_tenant_runtime",
         "agent": record,
     }
 
@@ -298,25 +310,19 @@ async def delete_dept_agent(
 ):
     """
     Delete a custom agent.
-    It is removed from the database and evicted from the live orchestrator immediately.
+    It is removed from the current tenant's configuration.
     """
     _validate_dept(dept)
-    record = get_custom_agent(agent_id)
+    _require_department_access(current_user, dept)
+    record = get_custom_agent(agent_id, _tenant(current_user))
     if not record or record["dept_tag"] != dept:
         raise HTTPException(status_code=404, detail="Agent not found in this department")
 
     role_title = record["role_title"]
-    delete_custom_agent(agent_id)
-
-    # Remove from live orchestrator
-    intra = _get_intra(dept)
-    evicted = False
-    if intra:
-        evicted = intra.remove_specialist(role_title)
+    delete_custom_agent(agent_id, _tenant(current_user))
 
     return {
         "message": f"Agent '{role_title}' deleted from dept '{dept}'.",
-        "live_evicted": evicted,
         "agent_id": agent_id,
     }
 
@@ -327,27 +333,11 @@ async def reload_dept_agents(
     current_user: dict = Depends(require_admin),
 ):
     """
-    Force-reload all active custom agents for this department into the
-    live IntraDeptOrchestrator.
-
-    Use this if you've made manual DB changes, restored from backup, or
-    want to re-sync after a partial failure. Normal CRUD endpoints
-    already reload automatically.
+    The shared process registry cannot safely load tenant-specific agents.
     """
     _validate_dept(dept)
-    intra = _get_intra(dept)
-    if not intra:
-        raise HTTPException(
-            status_code=503,
-            detail=f"IntraDeptOrchestrator for dept '{dept}' is not available. "
-                   "Check that the server is running and the department is active."
-        )
-
-    count = intra.reload_custom_agents()
-    all_specialists = intra.list_specialists()
-
-    return {
-        "message": f"Reloaded {count} custom agent(s) for dept '{dept}'.",
-        "custom_agents_active": count,
-        "all_specialists": all_specialists,
-    }
+    _require_department_access(current_user, dept)
+    raise HTTPException(
+        status_code=409,
+        detail="Tenant-specific agent activation requires the tenant-aware runtime. The configuration is saved but cannot be loaded into the shared runtime.",
+    )

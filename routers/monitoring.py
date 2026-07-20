@@ -19,12 +19,12 @@ from .deps import get_current_user
 
 router = APIRouter(tags=["monitoring"])
 
-_ALLOWED_AUDIT_ROLES = ("admin", "manager", "ceo", "board_member")
+_ALLOWED_AUDIT_ROLES = ("admin", "ceo")
 
 
 def _require_audit_access(current_user: dict) -> dict:
     if current_user.get("role") not in _ALLOWED_AUDIT_ROLES:
-        raise HTTPException(status_code=403, detail="Admin or manager access required")
+        raise HTTPException(status_code=403, detail="Tenant administrator access required")
     return current_user
 
 
@@ -37,11 +37,11 @@ async def audit_trail(
     limit:      int = 50,
     current_user: dict = Depends(get_current_user),
 ):
-    """Admin/manager — returns the immutable audit log."""
+    """Tenant administrator — returns the tenant's immutable audit log."""
     _require_audit_access(current_user)
     audit = get_audit()
     return audit.query_audit_trail(
-        user_id=filter_uid, event_type=event_type, limit=min(limit, 500)
+        user_id=filter_uid, event_type=event_type, tenant_id=str(current_user.get("tenant_id") or "default"), limit=min(limit, 500)
     )
 
 
@@ -49,10 +49,11 @@ async def audit_trail(
 
 @router.get("/agents/stats")
 async def agent_stats(current_user: dict = Depends(get_current_user)):
-    """Admin/manager — per-agent performance statistics."""
+    """Tenant administrator — per-agent performance statistics for this tenant."""
     _require_audit_access(current_user)
     audit = get_audit()
-    return {agent_id: audit.get_agent_stats(agent_id) for agent_id in AGENT_REGISTRY}
+    tenant_id = str(current_user.get("tenant_id") or "default")
+    return {agent_id: audit.get_agent_stats(agent_id, tenant_id) for agent_id in AGENT_REGISTRY}
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

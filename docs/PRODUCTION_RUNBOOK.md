@@ -28,7 +28,7 @@ Use Qdrant for a shared vector store when API and worker replicas run on differe
 USE_QDRANT=true docker compose --profile qdrant up -d --build
 ```
 
-The `rapid` service handles HTTP requests. The `worker` service processes RAG indexing, connector sync, and signed webhook jobs. Exactly one API replica should set `RAPID_ENABLE_SCHEDULER=true` unless scheduling is moved to an external orchestrator.
+The `rapid` service handles HTTP requests. The `worker` service processes RAG indexing, connector sync, and signed webhook jobs. The dedicated `scheduler` service is the only supplied schedule dispatcher; scale it only after replacing it with a leader-elected or managed scheduler.
 
 ## Release checks
 

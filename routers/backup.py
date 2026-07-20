@@ -11,6 +11,8 @@ Routes:
 """
 
 import logging
+import tarfile
+from pathlib import Path
 from typing import Optional, Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -46,6 +48,25 @@ class BackupConfigUpdate(BaseModel):
 
 
 _VALID_PROVIDERS = ("local", "s3", "gcs", "azure")
+
+
+def _local_backup_path(backup_id: str) -> Path:
+    """Resolve a backup name without allowing an admin endpoint to escape its backup directory."""
+    backup_dir = Path(get_backup_manager()._cfg.get("local_dir", "data/backups")).resolve()
+    candidate = (backup_dir / backup_id).resolve()
+    if candidate.parent != backup_dir or not candidate.name.startswith("rapid_backup_") or not candidate.name.endswith(".tar.gz"):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    return candidate
+
+
+def _safe_extract(archive: tarfile.TarFile, destination: Path) -> None:
+    """Reject archive members that would write outside the application data directory."""
+    root = destination.resolve()
+    for member in archive.getmembers():
+        target = (root / member.name).resolve()
+        if not target.is_relative_to(root) or member.issym() or member.islnk() or member.isdev():
+            raise HTTPException(status_code=400, detail="Backup archive contains an unsafe path")
+    archive.extractall(path=root)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -120,13 +141,8 @@ async def restore_backup(backup_id: str, current_user: dict = Depends(require_ad
     Extracts the archive over the existing data directory.
     Only local backups are supported for restore; cloud backups must be downloaded first.
     """
-    import tarfile
-    from pathlib import Path as _Path
-    mgr = get_backup_manager()
-    local_dir = _Path(mgr._cfg.get("local_dir", "data/backups"))
-    archive_path = local_dir / backup_id
-
-    if not archive_path.exists() or not archive_path.name.endswith(".tar.gz"):
+    archive_path = _local_backup_path(backup_id)
+    if not archive_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"Backup '{backup_id}' not found in local backup directory",
@@ -135,7 +151,7 @@ async def restore_backup(backup_id: str, current_user: dict = Depends(require_ad
     logger.info(f"[backup] Restore from {backup_id} triggered by admin={current_user['sub']}")
     try:
         with tarfile.open(str(archive_path), "r:gz") as tar:
-            tar.extractall(path=".")   # restores relative paths (data/...) in place
+            _safe_extract(tar, Path("."))
     except Exception as e:
         logger.error(f"[backup] Restore failed: {e}")
         raise HTTPException(status_code=500, detail=f"Restore failed: {e}")
@@ -149,12 +165,8 @@ async def delete_backup(backup_id: str, current_user: dict = Depends(require_adm
     Delete a specific local backup archive by filename.
     backup_id is the filename (e.g. rapid_backup_20260101_120000.tar.gz).
     """
-    from pathlib import Path as _Path
-    mgr = get_backup_manager()
-    local_dir = _Path(mgr._cfg.get("local_dir", "data/backups"))
-    archive_path = local_dir / backup_id
-
-    if not archive_path.exists() or not archive_path.name.startswith("rapid_backup_"):
+    archive_path = _local_backup_path(backup_id)
+    if not archive_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"Backup '{backup_id}' not found or cannot be deleted",

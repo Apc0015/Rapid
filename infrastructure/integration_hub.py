@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urlparse
 from infrastructure.people_ops_store import DEPARTMENTS, PLAYBOOKS, PeopleOpsError, get_people_ops_store
 from infrastructure.job_queue import get_job_queue
 from infrastructure.secret_vault import SecretVaultError, get_secret_vault
+from infrastructure.tenant_policy import TenantPolicyError, get_tenant_policy
 
 
 INTEGRATION_CATALOG: dict[str, dict[str, Any]] = {
@@ -153,6 +154,11 @@ class IntegrationHub:
             raise IntegrationHubError("This provider does not support the requested authentication mode")
         if auth_mode != "sandbox" and not credential_ref.strip() and not str((config or {}).get("client_secret_ref") or "").strip():
             raise IntegrationHubError("A secret-manager credential reference is required for live connections")
+        if auth_mode != "sandbox":
+            try:
+                get_tenant_policy(tenant_id).require_external_connection(definition["name"])
+            except TenantPolicyError as error:
+                raise IntegrationHubError(str(error)) from error
         if not label.strip() or len(label) > 160:
             raise IntegrationHubError("A connection label between 1 and 160 characters is required")
         config = self._safe_config(config)
@@ -299,6 +305,12 @@ class IntegrationHub:
             raise IntegrationHubError("Integration connection not found")
         if row["auth_mode"] != "oauth":
             raise IntegrationHubError("This connection is not configured for OAuth")
+        try:
+            get_tenant_policy(tenant_id).require_external_connection(
+                INTEGRATION_CATALOG[row["provider"]]["name"]
+            )
+        except TenantPolicyError as error:
+            raise IntegrationHubError(str(error)) from error
         config = json.loads(row["config_json"] or "{}")
         authorize_url = self._validate_oauth_url(str(config.get("authorize_url") or ""), "OAuth authorization URL")
         client_id = str(config.get("client_id") or "").strip()

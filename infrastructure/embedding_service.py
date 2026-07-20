@@ -153,6 +153,8 @@ class EmbeddingService:
 
         runtime = get_tenant_admin_store().active_model_runtime(tenant_id)
         provider = runtime["provider"]
+        from infrastructure.tenant_policy import get_tenant_policy
+        get_tenant_policy(tenant_id).require_provider(provider)
         try:
             if provider == "ollama":
                 target_model = model or os.getenv("OLLAMA_EMBEDDING_MODEL", _DEFAULT_OLLAMA_EMBED_MODEL)

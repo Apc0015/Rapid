@@ -13,6 +13,9 @@ AXE_PATH = Path(__file__).resolve().parents[1] / "frontend" / "node_modules" / "
 def assert_accessible(page, label: str) -> None:
     if not AXE_PATH.exists():
         raise AssertionError(f"axe-core is missing at {AXE_PATH}")
+    # Navigation drawers use a short transform transition. Audit the settled
+    # page rather than the intermediate state where both layers are visible.
+    page.wait_for_timeout(350)
     page.add_script_tag(path=str(AXE_PATH))
     result = page.evaluate(
         """async () => axe.run(document, {
@@ -33,26 +36,66 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        desktop = browser.new_page(viewport={"width": 1440, "height": 1000})
+        desktop_context = browser.new_context(viewport={"width": 1440, "height": 1000}, bypass_csp=True)
+        desktop = desktop_context.new_page()
         if api_url:
             desktop.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         errors: list[str] = []
         desktop.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         desktop.on("pageerror", lambda error: errors.append(str(error)))
+        desktop.goto(f"{base_url}/beta", wait_until="domcontentloaded")
+        desktop.wait_for_selector(".beta-hero")
+        assert desktop.locator(".beta-hero h1").inner_text() == "Run the weekly review that keeps your company aligned."
+        assert desktop.locator(".beta-flow li").count() == 3
+        assert_accessible(desktop, "beta landing")
+        desktop.screenshot(path=str(output / "desktop-beta.png"), full_page=True)
+        desktop.goto(f"{base_url}/start", wait_until="domcontentloaded")
+        desktop.wait_for_selector(".start-form")
+        assert desktop.locator(".start-intro h1").inner_text() == "Turn scattered work into a clear weekly operating review."
+        desktop.wait_for_selector(".deployment-choice")
+        assert desktop.locator(".deployment-choice").count() == 4
+        assert_accessible(desktop, "organization onboarding")
+        desktop.screenshot(path=str(output / "desktop-organization-start.png"), full_page=True)
         desktop.goto(f"{base_url}/login", wait_until="domcontentloaded")
         desktop.wait_for_selector("#login-form")
         assert_accessible(desktop, "login")
         desktop.screenshot(path=str(output / "desktop-login.png"), full_page=True)
         desktop.click("#demo-button")
         desktop.wait_for_url("**/workspace/overview")
+        # Demo configuration persists across browser runs. Normalize this
+        # module before validating the common portal navigation.
+        desktop.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
+        desktop.wait_for_selector("#features-list .admin-card")
+        crm_feature = desktop.locator('[data-feature="crm"]')
+        if not crm_feature.is_checked():
+            desktop.locator("label.switch", has=crm_feature).click()
+            desktop.wait_for_function("document.querySelector('[data-feature=\"crm\"]')?.checked === true")
+        desktop.goto(f"{base_url}/workspace/overview", wait_until="domcontentloaded")
         desktop.wait_for_selector("#organization-name")
         assert desktop.locator("#organization-name").inner_text() == "Northstar Labs"
-        assert desktop.locator(".portal-nav [data-view]").count() == 12
+        assert desktop.locator(".portal-nav [data-view]").count() == 13
         assert desktop.locator("#root").get_attribute("data-reactroot") is None
-        desktop.fill("#intelligence-question", "What is the Atlas renewal risk?")
+        desktop.fill("#intelligence-question", "Give me the startup operating picture")
         desktop.click(".intelligence-submit")
-        desktop.wait_for_selector(".intelligence-response")
-        assert "atlas" in desktop.locator(".intelligence-response").inner_text().lower()
+        desktop.wait_for_url("**/workspace/chat*")
+        desktop.wait_for_selector(".rapid-chat-message.assistant")
+        organization_brief = desktop.locator(".rapid-chat-message.assistant").inner_text().lower()
+        assert "northstar labs" in organization_brief
+        assert "live ai analysis" not in organization_brief
+        initial_chat_sessions = desktop.locator(".rapid-chat-session").count()
+        assert initial_chat_sessions >= 1
+        desktop.click('.portal-nav [data-view="actions"]')
+        desktop.wait_for_function(
+            "document.querySelector('#intelligence-question')?.getAttribute('placeholder') === 'Ask RAPID about commitments and owners'"
+        )
+        assert desktop.locator("#intelligence-question").get_attribute("placeholder") == "Ask RAPID about commitments and owners"
+        desktop.fill("#intelligence-question", "What needs attention today?")
+        desktop.click(".intelligence-submit")
+        desktop.wait_for_url("**/workspace/chat*")
+        desktop.wait_for_selector(".rapid-chat-message.assistant")
+        assert "open commitments" in desktop.locator(".rapid-chat-message.assistant").inner_text().lower()
+        assert desktop.locator(".rapid-chat-session").count() == initial_chat_sessions + 1
+        desktop.click('.portal-nav [data-view="overview"]')
         assert_accessible(desktop, "workspace overview")
         desktop.screenshot(path=str(output / "desktop-overview.png"), full_page=True)
 
@@ -68,6 +111,10 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         desktop.locator("#create-project-dialog").get_by_role("button", name="Close dialog").click()
 
         desktop.click('.portal-nav [data-view="meetings"]')
+        desktop.wait_for_selector(".meetings-summary")
+        assert desktop.locator(".meetings-summary-metrics article").count() == 3
+        assert_accessible(desktop, "meetings")
+        desktop.screenshot(path=str(output / "desktop-meetings.png"), full_page=True)
         desktop.locator("#meetings-list [data-meeting]").first.click()
         desktop.wait_for_function("document.querySelector('#meeting-dialog').open === true")
         desktop.fill("#meeting-notes", "E2E validation note")
@@ -108,8 +155,31 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert desktop.locator("#features-list .admin-card").count() >= 8
         assert desktop.locator("#models-list .admin-card").count() == 2
         assert desktop.locator("#connections-list .connection-row").count() >= 4
+        assert desktop.locator(".trust-control").count() == 5
         assert_accessible(desktop, "tenant configuration")
         desktop.screenshot(path=str(output / "desktop-admin.png"), full_page=True)
+        desktop.goto(f"{base_url}/admin/integrations", wait_until="domcontentloaded")
+        desktop.wait_for_selector("#integration-list")
+        desktop.wait_for_selector("#add-integration")
+        assert desktop.locator(".startup-provider-list article").count() >= 10
+        assert_accessible(desktop, "startup integrations")
+        desktop.screenshot(path=str(output / "desktop-integrations.png"), full_page=True)
+        desktop.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
+        desktop.wait_for_selector("#features-list .admin-card")
+        crm_feature = desktop.locator('[data-feature="crm"]')
+        assert crm_feature.is_checked()
+        desktop.locator("label.switch", has=crm_feature).click()
+        desktop.wait_for_function("document.querySelector('[data-feature=\"crm\"]')?.checked === false")
+        desktop.goto(f"{base_url}/workspace/crm", wait_until="domcontentloaded")
+        desktop.wait_for_function("window.location.pathname === '/workspace/overview'")
+        desktop.wait_for_selector("#organization-name")
+        assert desktop.locator('.portal-nav [data-view="crm"]').count() == 0
+        desktop.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
+        desktop.wait_for_selector('[data-feature="crm"]', state="attached")
+        crm_feature = desktop.locator('[data-feature="crm"]')
+        if not crm_feature.is_checked():
+            desktop.locator("label.switch", has=crm_feature).click()
+            desktop.wait_for_function("document.querySelector('[data-feature=\"crm\"]')?.checked === true")
 
         desktop.goto(f"{base_url}/operations", wait_until="domcontentloaded")
         desktop.wait_for_selector(".department-tabs button")
@@ -121,11 +191,18 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
 
         token = desktop.evaluate("localStorage.getItem('rapid_people_ops_token')")
         profile = desktop.evaluate("localStorage.getItem('rapid_profile')")
-        mobile = browser.new_page(viewport={"width": 390, "height": 844})
+        mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, bypass_csp=True)
+        mobile = mobile_context.new_page()
         if api_url:
             mobile.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         mobile.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         mobile.on("pageerror", lambda error: errors.append(str(error)))
+        mobile.goto(f"{base_url}/beta", wait_until="domcontentloaded")
+        mobile.wait_for_selector(".beta-product-preview")
+        overflow = mobile.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert overflow <= 1, f"mobile beta horizontal overflow: {overflow}px"
+        assert_accessible(mobile, "mobile beta landing")
+        mobile.screenshot(path=str(output / "mobile-beta.png"), full_page=True)
         mobile.goto(f"{base_url}/login", wait_until="domcontentloaded")
         mobile.evaluate("([token, profile]) => { localStorage.setItem('rapid_people_ops_token', token); localStorage.setItem('rapid_profile', profile); }", [token, profile])
         mobile.goto(f"{base_url}/workspace/overview", wait_until="domcontentloaded")
@@ -143,6 +220,14 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert overflow <= 1, f"mobile horizontal overflow: {overflow}px"
         assert_accessible(mobile, "mobile people directory")
         mobile.screenshot(path=str(output / "mobile-people.png"), full_page=True)
+        mobile.click("#open-navigation")
+        mobile.wait_for_timeout(300)
+        mobile.click('.portal-nav [data-view="chat"]')
+        mobile.wait_for_selector(".rapid-chat")
+        overflow = mobile.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert overflow <= 1, f"mobile chat horizontal overflow: {overflow}px"
+        assert_accessible(mobile, "mobile RAPID chat")
+        mobile.screenshot(path=str(output / "mobile-chat.png"), full_page=True)
         mobile.goto(f"{base_url}/admin/configuration", wait_until="domcontentloaded")
         mobile.wait_for_selector("#features-list .admin-card")
         mobile.locator(".mobile-topbar button[aria-label='Open navigation']").click()
@@ -158,7 +243,8 @@ def run(base_url: str, output: Path, api_url: str = "") -> None:
         assert_accessible(mobile, "mobile administration")
         mobile.screenshot(path=str(output / "mobile-admin-users.png"), full_page=True)
 
-        tablet = browser.new_page(viewport={"width": 924, "height": 980})
+        tablet_context = browser.new_context(viewport={"width": 924, "height": 980}, bypass_csp=True)
+        tablet = tablet_context.new_page()
         if api_url:
             tablet.add_init_script(f"window.RAPID_API_URL = {json.dumps(api_url)};")
         tablet.goto(f"{base_url}/login", wait_until="domcontentloaded")

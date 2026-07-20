@@ -1,12 +1,12 @@
-# RAPID — Organization Operating System
+# RAPID — Startup Operating Workspace
 
-RAPID is a governed organization workspace: one React product portal for people, CRM, projects, operations, knowledge, and tenant administration, backed by configurable AI agents and organization data services.
+RAPID is a governed startup operating workspace: one React product portal for product delivery, customer work, decisions, projects, operations, knowledge, and tenant administration, backed by configurable AI assistance and organization data services.
 
 ---
 
 ## What RAPID Does
 
-RAPID starts as a usable synthetic organization demo. An administrator can then connect organization data, model providers, SSO, and supported integrations from the admin portal. The portal keeps access, review, audit, and tenant configuration in the same product surface.
+RAPID is currently operated as an invite-only beta. A founder requests access at `/start`; an authorised RAPID reviewer approves or declines the request; approval creates an isolated synthetic startup workspace and displays a one-time account-activation link for the reviewer to send. No payment, customer data connection, or production database access is required during the beta. After activation, the founder can configure model providers, organization data, SSO, and supported integrations from the admin portal.
 
 **Key capabilities:**
 
@@ -15,12 +15,13 @@ RAPID starts as a usable synthetic organization demo. An administrator can then 
   - **HR, IT, Finance, Marketing** — `orgos/`, real per-step specialists, RAG-grounded answers, independent verification against actual recorded state
   - **Legal, Sales, Operations, Procurement, R&D, Customer Success** — `infrastructure/people_ops_store.py`, a generic sandboxed playbook engine (each step's "evidence" is a fixed stub, not real work) pending a real orgos implementation
   - IT and Finance additionally have a couple of orgos-uncovered scenarios (generic access requests, monthly financial close) still running on the sandboxed engine alongside their real orgos playbooks
-- **Grounded Q&A** — `/ask`: single-department retrieval + one synthesis call, cited, works on a local model. `/query` and `/intelligence/ask` run the older multi-agent fan-out (many LLM calls); prefer `/ask` unless you specifically need multi-department synthesis with a capable model behind it.
+- **Persistent RAPID chat** — page-aware, tenant-isolated conversations that retain approved evidence, source context, and follow-up history, served through `infrastructure/intelligence_gateway.py` (`/intelligence/ask`). `/ask` (`main.py`) is a second, simpler entry point — one department, one retrieval call, one synthesis call — useful standalone or on a local model without the gateway's broader evidence collection; `/query` is the original multi-agent fan-out both newer paths sit in front of.
+- **Startup-first setup** — a focused starting workspace for product, growth, customer, finance, delivery, and operations work; other operating models remain configurable for future expansion
 - **Project intelligence** — isolated project data spaces, scoped queries, skills, generated documents, portfolio analysis, and team membership
 - **Organization knowledge** — document upload, extraction/OCR, PII handling, source sync jobs, permissions, lexical/vector retrieval, and optional Qdrant
-- **Approval controls** — generated outputs are queued for review and cannot be downloaded until approved
+- **Visible trust controls** — founders can inspect the data boundary, active runtime, connection state, evidence behavior, and approval requirement before connecting production data
 - **Tenant administration** — invitations, roles, organization structure, model/provider configuration, integrations, branding, and operations visibility
-- **Pluggable AI** — OpenRouter and Ollama are configuration-driven; other provider and connector paths are opt-in tenant integrations
+- **AI deployment policy** — managed cloud, private, on-prem, or hybrid routing; private and on-prem policies block cloud providers and default to local Ollama
 
 ---
 
@@ -30,7 +31,9 @@ RAPID has one supported product surface: the React portal in `frontend/src`. It 
 
 The FastAPI routers and agent services are the product backend, not a second application. They provide governed agent orchestration, RAG, task runs, integrations, skills, project intelligence, and tenant administration to the React portal. The retired standalone HTML entry points have been removed; integrations and OAuth callbacks return to React routes.
 
-The local synthetic organization is the default product demo and test dataset. Customer databases, SSO, LLM providers, and live connectors are opt-in tenant configuration, not required to explore the product.
+The local synthetic startup is the default product demo and test dataset. Customer databases, SSO, LLM providers, and live connectors are opt-in tenant configuration, not required to explore the product. RAPID never treats a configured secret reference as a live connection: provider and connector setup remain visibly pending until the customer's deployment has supplied and validated it.
+
+Older direct OAuth connector routes are disabled by default. This prevents customer data from entering a legacy ingestion path while tenant-scoped, permission-aware adapters are completed. Set `RAPID_ENABLE_LEGACY_CLOUD_CONNECTORS=true` only for a controlled migration environment, never as the default customer deployment.
 
 ---
 
@@ -74,21 +77,30 @@ RAPID/
 │   ├── actions.py             Human review queue and action decisions
 │   ├── organization_data.py   Sources, uploads, RAG status, document permissions
 │   ├── tenant_admin.py        Tenant configuration, invitations, entitlements, branding
+│   ├── onboarding.py          Controlled organization provisioning service
+│   ├── beta.py                Invite-only beta application, approval, and activation API
 │   ├── organization_*.py      Structure, integrations, and organization operations
-│   ├── intelligence.py        Portal intelligence and evidence-aware answers (multi-agent, slow)
+│   ├── intelligence.py        Portal intelligence and evidence-aware answers (/intelligence/ask)
+│   ├── chat_sessions.py       Tenant-scoped RAPID conversation history
 │   └── jobs.py / monitoring.py Durable job visibility, metrics, liveness, readiness
 │
 ├── infrastructure/            Product services and storage adapters
-│   ├── query_service.py       Multi-agent governed query pipeline (/query, /intelligence/ask)
-│   ├── organization_rag.py    Permission-aware organization retrieval (uses pipelines/rag_pipeline
-│   │                            + the same FAISS store orgos reads/writes — one vector backend)
+│   ├── intelligence_gateway.py Shared intelligence scope, evidence, and specialist routing
+│   ├── query_service.py       Multi-agent governed query pipeline underlying /query and,
+│   │                            via intelligence_gateway, /intelligence/ask
+│   ├── organization_rag.py    Permission-aware organization retrieval — uses the same FAISS
+│   │                            store orgos reads/writes (one vector backend, two ingestion
+│   │                            paths: this one for portal uploads, scripts/build_indexes.py
+│   │                            for orgos's data/documents/ corpus)
 │   ├── document_extractor.py  Text extraction, OCR, PII handling
 │   ├── embedding_service.py   Configurable embedding provider
 │   ├── job_queue.py           Durable queue, retries, dead letters, worker heartbeats
 │   ├── job_handlers.py        Indexing, sync, webhook, and connector job handlers
 │   ├── organization_data_store.py Source/document metadata and access scopes
 │   ├── integration_hub.py     Configured provider and connector registry
-│   └── tenant_admin_store.py  Tenant configuration and entitlement state
+│   ├── tenant_admin_store.py  Tenant configuration and entitlement state
+│   ├── organization_profiles.py Profile catalogue and AI deployment policies
+│   └── tenant_provisioning.py Tenant, CEO, profile, and workspace provisioning
 │
 ├── pipelines/rag_pipeline.py  Hybrid retrieval + grounded synthesis used by both /ask and orgos
 ├── agents/                    Department agents, project intelligence, skills, and governance
@@ -147,6 +159,8 @@ npm run dev --prefix frontend
 ```
 
 Then navigate to `http://localhost:4173/login`.
+
+To test the private-beta application journey, open `http://localhost:4173/start`. An authorised reviewer approves the request from **Administration → Users and access**, then sends the one-time link displayed there. The activated founder is provisioned as that tenant's CEO and can refine the operating profile under Administration.
 
 `./start.sh` starts both FastAPI and the React portal with one command.
 
@@ -211,10 +225,17 @@ Production compose requires an active `worker` heartbeat. The response includes 
 |---|---|---|---|
 | `JWT_SECRET_KEY` | **Yes** | — | Strong random secret ≥32 chars |
 | `RAPID_ENV` | No | `development` | `production` disables debug mode |
+| `RAPID_ENABLE_DEMO` | No | `false` | Enables the public synthetic demo session; keep `false` for invite-only beta |
+| `RAPID_PORTAL_URL` | Yes for beta | — | Public portal URL used to create activation links, for example `https://beta.rapid.example` |
+| `RAPID_BETA_REVIEWER_IDS` | Yes in production | — | Comma-separated account IDs permitted to approve beta applications |
+| `RAPID_ALLOW_SELF_SERVICE_PROVISIONING` | No | `false` | Must remain `false` for invite-only beta |
+| `RAPID_ALLOW_LEGACY_REGISTRATION` | No | `false` | Must remain `false` for invite-only beta |
+| `RAPID_ORGANIZATION_AI_TIMEOUT_SECONDS` | No | `12` | Max seconds for an interactive organization-wide AI answer before approved-evidence fallback |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter (100+ models) |
 | `ANTHROPIC_API_KEY` | No | — | Claude models |
 | `OPENAI_API_KEY` | No | — | GPT models |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Local Ollama |
+| `OLLAMA_DOCKER_BASE_URL` | No | `http://ollama:11434/v1` | Ollama endpoint used inside Docker Compose |
 | `OLLAMA_MODEL` | No | `llama3.2` | Ollama model to use |
 | `DATABASE_URL` | No | `sqlite:///data/db/rapid.db` | SQLite or PostgreSQL |
 | `RAPID_REQUIRE_JOB_WORKER` | No | `false` | Require a live durable worker in `/health/ready`; enabled by Docker production compose |
@@ -223,6 +244,35 @@ Production compose requires an active `worker` heartbeat. The response includes 
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 
 See `.env.example` for the full list.
+
+---
+
+## Invite-Only Beta Launch
+
+Set the following values in the deployed environment before exposing the public URL. Do not use the local development `.env` as a production secret source.
+
+```bash
+RAPID_ENV=production
+RAPID_PORTAL_URL=https://beta.your-domain.com
+RAPID_ENABLE_DEMO=false
+RAPID_ALLOW_SELF_SERVICE_PROVISIONING=false
+RAPID_ALLOW_LEGACY_REGISTRATION=false
+RAPID_BETA_REVIEWER_IDS=your_existing_admin_account_id
+JWT_SECRET_KEY=<a-new-random-secret-of-at-least-32-characters>
+RAPID_ENCRYPTION_KEY=<a-new-fernet-key>
+ALLOWED_HOSTS=beta.your-domain.com
+ALLOWED_ORIGINS=https://beta.your-domain.com
+```
+
+Launch sequence:
+
+1. Sign in as the configured reviewer and open **Administration → Users and access**.
+2. A founder requests access at `/start`; no tenant or password is created at that point.
+3. Review the request, approve it, copy the one-time activation link immediately, and send it through your chosen email or support channel.
+4. The founder activates their account, then works only in an isolated synthetic tenant until they intentionally configure data, AI providers, or integrations.
+5. Verify `/api/health/ready` and the beta application/activation flow on the deployed domain before inviting external testers.
+
+There is deliberately no payment or automatic outbound email in this beta flow. Billing and transactional email should be added only when the relevant provider accounts and product policy are ready.
 
 ---
 
@@ -286,9 +336,12 @@ nginx (:80)
         ├── /query, /intelligence/ask            — older multi-agent fan-out (many LLM calls)
         ├── Tenant/Admin API: users, configuration, organization structure, integrations
         ├── Project API: scoped queries, skills, approvals, generated documents
-        └── Governed data and intelligence services
-              query service · department agents · RAG · search
-              extraction/OCR · PII rules · permissions
+        └── Unified intelligence gateway
+              shared scope · permissions · evidence · audit contract
+                   ├── organization agent specialist
+                   ├── project and portfolio specialists
+                   └── governed data and retrieval services
+                         RAG · search · extraction/OCR · PII rules
                    ├── SQLite + files: tenant/project metadata and documents
                    ├── FAISS or Qdrant: vector retrieval and embeddings — ONE store, written by
                    │     both orgos (scripts/build_indexes.py) and organization_rag (uploads)
