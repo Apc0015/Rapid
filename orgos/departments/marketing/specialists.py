@@ -46,12 +46,48 @@ def summarize_performance(ctx: StepContext) -> HandlerResult:
 
 
 def draft_next_week_plan(ctx: StepContext) -> HandlerResult:
-    summ = ctx.find("performance_summary") or {}
-    cpa = summ.get("data", {}).get("cpa")
-    plan = ("Hold spend steady, performance is on track." if cpa and cpa < 50
-            else "Recommend reviewing targeting — CPA trending high or no conversions.")
-    ctx.record("next_week_plan", {"plan": plan, "drafted_at": _today()})
-    return HandlerResult(summary=f"Next week's plan drafted: {plan}", evidence={"plan": plan})
+    """Draft next week's plan with a single governed AI call over this week's real
+    numbers — confidence-scored. If the model is unavailable, record an honest
+    rule-based fallback marked as such; never present it as an AI strategy."""
+    metrics = (ctx.find("weekly_metrics") or {}).get("data", {})
+    summ = (ctx.find("performance_summary") or {}).get("data", {})
+    cpa = summ.get("cpa")
+    tenant_id = getattr(ctx.run, "tenant_id", "default")
+
+    spend = metrics.get("spend", 0) or 0
+    conv = metrics.get("conversions", 0) or 0
+    prompt = (
+        "You are the marketing lead for this company. Using ONLY the numbers "
+        "below, write next week's marketing plan as 3-5 concrete, prioritized "
+        "actions. Be specific about channel and budget direction; do not invent "
+        "figures that aren't given.\n\n"
+        f"This week: ${spend:.0f} spend, {conv} conversions"
+        + (f", ${cpa:.2f} cost per acquisition." if cpa else ", no conversions.")
+    )
+
+    from orgos.reasoning import synthesize
+    drafted = synthesize(prompt, tenant_id=tenant_id)
+    if drafted:
+        ctx.record("next_week_plan", {
+            "plan": drafted["text"], "confidence": drafted["confidence"],
+            "citations": drafted["citations"], "source": "llm", "drafted_at": _today(),
+        })
+        return HandlerResult(
+            summary=f"Next week's plan drafted by the marketing agent "
+                    f"(confidence {drafted['confidence']:.0%}).",
+            evidence={"confidence": drafted["confidence"], "source": "llm"},
+        )
+
+    # Honest fallback — the model couldn't run, so say so rather than fake a plan.
+    fallback = ("Hold spend steady - performance is on track." if cpa and cpa < 50
+                else "Review targeting - CPA is trending high or there were no conversions.")
+    ctx.record("next_week_plan", {
+        "plan": fallback, "confidence": 0.2, "source": "unavailable", "drafted_at": _today(),
+    })
+    return HandlerResult(
+        summary="AI model unavailable - recorded a rule-based fallback plan (not an AI strategy).",
+        evidence={"source": "unavailable"},
+    )
 
 
 # ── Campaign budget request ──────────────────────────────────────────────────────

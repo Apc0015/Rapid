@@ -12,6 +12,7 @@ from __future__ import annotations
 from orgos.models import Playbook, StepSpec, Autonomy
 
 A = Autonomy.A_AUTO
+B = Autonomy.B_APPROVE
 
 
 WEEKLY_DIGEST = Playbook(
@@ -74,8 +75,10 @@ CAMPAIGN_LAUNCH = Playbook(
                  "check_brand_guidelines", "v_brand_checked"),
         StepSpec("schedule", "Launch scheduled", "marketing", A,
                  "schedule_launch", "v_launch_scheduled"),
-        StepSpec("confirm_live", "Confirmed live", "marketing", A,
-                 "confirm_live", "v_confirmed_live"),
+        StepSpec("confirm_live", "Confirmed live", "marketing", B,
+                 "confirm_live", "v_confirmed_live",
+                 escalate_reason="Going live publishes this campaign to real users "
+                                 "— it needs your sign-off before it ships."),
     ],
 )
 
