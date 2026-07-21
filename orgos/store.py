@@ -58,6 +58,7 @@ class OrgStore:
                 """
                 CREATE TABLE IF NOT EXISTS task_runs (
                     run_id           TEXT PRIMARY KEY,
+                    tenant_id        TEXT NOT NULL DEFAULT 'default',
                     department       TEXT NOT NULL,
                     playbook         TEXT NOT NULL,
                     title            TEXT NOT NULL,
@@ -100,6 +101,7 @@ class OrgStore:
                 CREATE TABLE IF NOT EXISTS escalations (
                     escalation_id  TEXT PRIMARY KEY,
                     run_id         TEXT NOT NULL,
+                    tenant_id      TEXT NOT NULL DEFAULT 'default',
                     step_id        TEXT,
                     department     TEXT,
                     title          TEXT,
@@ -115,6 +117,7 @@ class OrgStore:
                 CREATE TABLE IF NOT EXISTS audit_log (
                     entry_id    TEXT PRIMARY KEY,
                     run_id      TEXT,
+                    tenant_id   TEXT NOT NULL DEFAULT 'default',
                     step_id     TEXT,
                     department  TEXT,
                     actor       TEXT,
@@ -127,6 +130,7 @@ class OrgStore:
                 -- state here; the Verifier reads it back to confirm work.
                 CREATE TABLE IF NOT EXISTS records (
                     record_id    TEXT PRIMARY KEY,
+                    tenant_id    TEXT NOT NULL DEFAULT 'default',
                     department   TEXT,
                     record_type  TEXT,
                     subject      TEXT,
@@ -137,10 +141,10 @@ class OrgStore:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_steps_run   ON run_steps(run_id);
-                CREATE INDEX IF NOT EXISTS idx_runs_dept    ON task_runs(department, status);
-                CREATE INDEX IF NOT EXISTS idx_esc_status   ON escalations(department, status);
+                CREATE INDEX IF NOT EXISTS idx_runs_dept    ON task_runs(tenant_id, department, status);
+                CREATE INDEX IF NOT EXISTS idx_esc_status   ON escalations(tenant_id, department, status);
                 CREATE INDEX IF NOT EXISTS idx_audit_run    ON audit_log(run_id);
-                CREATE INDEX IF NOT EXISTS idx_records_look ON records(department, record_type, subject);
+                CREATE INDEX IF NOT EXISTS idx_records_look ON records(tenant_id, department, record_type, subject);
                 """
             )
             conn.commit()
@@ -149,11 +153,17 @@ class OrgStore:
             conn.close()
 
     def _migrate_mesh_columns(self, conn: sqlite3.Connection) -> None:
-        """Add mesh linkage columns to a task_runs table created before they existed."""
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)").fetchall()}
+        """Add columns to tables created before they existed (mesh links + tenant id)."""
+        run_cols = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)").fetchall()}
         for col in ("parent_run_id", "mesh_group_id"):
-            if col not in existing:
+            if col not in run_cols:
                 conn.execute(f"ALTER TABLE task_runs ADD COLUMN {col} TEXT")
+        # Multi-tenant isolation: every run / record / escalation / audit row
+        # carries a tenant_id. Pre-existing rows backfill to the 'default' tenant.
+        for table in ("task_runs", "escalations", "audit_log", "records"):
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "tenant_id" not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
         conn.commit()
 
     # ── runs ───────────────────────────────────────────────────────────────────
@@ -163,11 +173,11 @@ class OrgStore:
         try:
             conn.execute(
                 """INSERT INTO task_runs
-                   (run_id, department, playbook, title, subject, trigger_type,
+                   (run_id, tenant_id, department, playbook, title, subject, trigger_type,
                     trigger_payload, status, created_by, assigned_lead, digest_line,
                     created_at, updated_at, parent_run_id, mesh_group_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (run.run_id, run.department, run.playbook, run.title, run.subject,
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (run.run_id, run.tenant_id, run.department, run.playbook, run.title, run.subject,
                  run.trigger_type, json.dumps(run.trigger_payload), run.status,
                  run.created_by, run.assigned_lead, run.digest_line,
                  run.created_at, run.updated_at, run.parent_run_id, run.mesh_group_id),
@@ -220,10 +230,14 @@ class OrgStore:
              step.started_at, step.finished_at),
         )
 
-    def get_run(self, run_id: str) -> Optional[TaskRun]:
+    def get_run(self, run_id: str, tenant_id: Optional[str] = None) -> Optional[TaskRun]:
         conn = self._connect()
         try:
-            row = conn.execute("SELECT * FROM task_runs WHERE run_id=?", (run_id,)).fetchone()
+            if tenant_id is not None:
+                row = conn.execute("SELECT * FROM task_runs WHERE run_id=? AND tenant_id=?",
+                                   (run_id, tenant_id)).fetchone()
+            else:
+                row = conn.execute("SELECT * FROM task_runs WHERE run_id=?", (run_id,)).fetchone()
             if not row:
                 return None
             run = self._row_to_run(row)
@@ -236,8 +250,11 @@ class OrgStore:
             conn.close()
 
     def list_runs(self, department: Optional[str] = None,
-                  status: Optional[str] = None, limit: int = 200) -> list[TaskRun]:
+                  status: Optional[str] = None, limit: int = 200,
+                  tenant_id: Optional[str] = None) -> list[TaskRun]:
         clauses, params = [], []
+        if tenant_id is not None:
+            clauses.append("tenant_id=?"); params.append(tenant_id)
         if department:
             clauses.append("department=?"); params.append(department)
         if status:
@@ -260,14 +277,21 @@ class OrgStore:
         finally:
             conn.close()
 
-    def list_runs_by_mesh_group(self, mesh_group_id: str) -> list[TaskRun]:
+    def list_runs_by_mesh_group(self, mesh_group_id: str,
+                                tenant_id: Optional[str] = None) -> list[TaskRun]:
         """Every run (across every department) that belongs to one cross-department task."""
         conn = self._connect()
         try:
-            rows = conn.execute(
-                "SELECT * FROM task_runs WHERE mesh_group_id=? OR run_id=? ORDER BY created_at",
-                (mesh_group_id, mesh_group_id),
-            ).fetchall()
+            if tenant_id is not None:
+                rows = conn.execute(
+                    "SELECT * FROM task_runs WHERE (mesh_group_id=? OR run_id=?) AND tenant_id=? ORDER BY created_at",
+                    (mesh_group_id, mesh_group_id, tenant_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM task_runs WHERE mesh_group_id=? OR run_id=? ORDER BY created_at",
+                    (mesh_group_id, mesh_group_id),
+                ).fetchall()
             runs = [self._row_to_run(r) for r in rows]
             for run in runs:
                 step_rows = conn.execute(
@@ -285,10 +309,10 @@ class OrgStore:
         try:
             conn.execute(
                 """INSERT INTO escalations
-                   (escalation_id, run_id, step_id, department, title, reason,
+                   (escalation_id, run_id, tenant_id, step_id, department, title, reason,
                     autonomy, status, created_at, decided_by, decided_at, decision_note)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (esc.escalation_id, esc.run_id, esc.step_id, esc.department, esc.title,
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (esc.escalation_id, esc.run_id, esc.tenant_id, esc.step_id, esc.department, esc.title,
                  esc.reason, esc.autonomy, esc.status, esc.created_at,
                  esc.decided_by, esc.decided_at, esc.decision_note),
             )
@@ -309,19 +333,27 @@ class OrgStore:
         finally:
             conn.close()
 
-    def get_escalation(self, escalation_id: str) -> Optional[Escalation]:
+    def get_escalation(self, escalation_id: str, tenant_id: Optional[str] = None) -> Optional[Escalation]:
         conn = self._connect()
         try:
-            row = conn.execute(
-                "SELECT * FROM escalations WHERE escalation_id=?", (escalation_id,)
-            ).fetchone()
+            if tenant_id is not None:
+                row = conn.execute(
+                    "SELECT * FROM escalations WHERE escalation_id=? AND tenant_id=?",
+                    (escalation_id, tenant_id)).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM escalations WHERE escalation_id=?", (escalation_id,)
+                ).fetchone()
             return self._row_to_escalation(row) if row else None
         finally:
             conn.close()
 
     def list_escalations(self, department: Optional[str] = None,
-                         status: Optional[str] = None) -> list[Escalation]:
+                         status: Optional[str] = None,
+                         tenant_id: Optional[str] = None) -> list[Escalation]:
         clauses, params = [], []
+        if tenant_id is not None:
+            clauses.append("tenant_id=?"); params.append(tenant_id)
         if department:
             clauses.append("department=?"); params.append(department)
         if status:
@@ -343,9 +375,9 @@ class OrgStore:
         try:
             conn.execute(
                 """INSERT INTO audit_log
-                   (entry_id, run_id, step_id, department, actor, event, detail, at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (entry.entry_id, entry.run_id, entry.step_id, entry.department,
+                   (entry_id, run_id, tenant_id, step_id, department, actor, event, detail, at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (entry.entry_id, entry.run_id, entry.tenant_id, entry.step_id, entry.department,
                  entry.actor, entry.event, entry.detail, entry.at),
             )
             conn.commit()
@@ -353,8 +385,11 @@ class OrgStore:
             conn.close()
 
     def list_audit(self, run_id: Optional[str] = None,
-                   department: Optional[str] = None, limit: int = 500) -> list[dict]:
+                   department: Optional[str] = None, limit: int = 500,
+                   tenant_id: Optional[str] = None) -> list[dict]:
         clauses, params = [], []
+        if tenant_id is not None:
+            clauses.append("tenant_id=?"); params.append(tenant_id)
         if run_id:
             clauses.append("run_id=?"); params.append(run_id)
         if department:
@@ -373,13 +408,13 @@ class OrgStore:
     # ── records (the system of record) ─────────────────────────────────────────
 
     def put_record(self, department: str, record_type: str, subject: str,
-                   data: dict, run_id: str = "") -> str:
-        """Insert or update a record keyed by (department, record_type, subject)."""
+                   data: dict, run_id: str = "", tenant_id: str = "default") -> str:
+        """Insert or update a record keyed by (tenant_id, department, record_type, subject)."""
         conn = self._connect()
         try:
             existing = conn.execute(
-                "SELECT record_id FROM records WHERE department=? AND record_type=? AND subject=?",
-                (department, record_type, subject),
+                "SELECT record_id FROM records WHERE tenant_id=? AND department=? AND record_type=? AND subject=?",
+                (tenant_id, department, record_type, subject),
             ).fetchone()
             now = _now()
             if existing:
@@ -393,21 +428,22 @@ class OrgStore:
                 rid = f"rec_{uuid.uuid4().hex[:12]}"
                 conn.execute(
                     """INSERT INTO records
-                       (record_id, department, record_type, subject, run_id, data, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (rid, department, record_type, subject, run_id, json.dumps(data), now, now),
+                       (record_id, tenant_id, department, record_type, subject, run_id, data, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (rid, tenant_id, department, record_type, subject, run_id, json.dumps(data), now, now),
                 )
             conn.commit()
             return rid
         finally:
             conn.close()
 
-    def find_record(self, department: str, record_type: str, subject: str) -> Optional[dict]:
+    def find_record(self, department: str, record_type: str, subject: str,
+                    tenant_id: str = "default") -> Optional[dict]:
         conn = self._connect()
         try:
             row = conn.execute(
-                "SELECT * FROM records WHERE department=? AND record_type=? AND subject=?",
-                (department, record_type, subject),
+                "SELECT * FROM records WHERE tenant_id=? AND department=? AND record_type=? AND subject=?",
+                (tenant_id, department, record_type, subject),
             ).fetchone()
             if not row:
                 return None
@@ -421,9 +457,11 @@ class OrgStore:
             conn.close()
 
     def list_records(self, department: Optional[str] = None,
-                     record_type: Optional[str] = None, subject: Optional[str] = None) -> list[dict]:
+                     record_type: Optional[str] = None, subject: Optional[str] = None,
+                     tenant_id: Optional[str] = None) -> list[dict]:
         clauses, params = [], []
-        for col, val in (("department", department), ("record_type", record_type), ("subject", subject)):
+        for col, val in (("tenant_id", tenant_id), ("department", department),
+                         ("record_type", record_type), ("subject", subject)):
             if val is not None:
                 clauses.append(f"{col}=?"); params.append(val)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -456,6 +494,7 @@ class OrgStore:
             run_id=d["run_id"], department=d["department"], playbook=d["playbook"],
             title=d["title"], subject=d.get("subject") or "",
             trigger_type=d.get("trigger_type") or "", trigger_payload=payload,
+            tenant_id=d.get("tenant_id") or "default",
             status=d["status"], created_by=d.get("created_by") or "",
             assigned_lead=d.get("assigned_lead") or "", digest_line=d.get("digest_line") or "",
             created_at=d.get("created_at") or "", updated_at=d.get("updated_at") or "",
@@ -484,7 +523,8 @@ class OrgStore:
         d = dict(row)
         return Escalation(
             escalation_id=d["escalation_id"], run_id=d["run_id"], step_id=d.get("step_id"),
-            department=d.get("department") or "", title=d.get("title") or "",
+            department=d.get("department") or "", tenant_id=d.get("tenant_id") or "default",
+            title=d.get("title") or "",
             reason=d.get("reason") or "", autonomy=d.get("autonomy") or "",
             status=d.get("status") or "pending", created_at=d.get("created_at") or "",
             decided_by=d.get("decided_by"), decided_at=d.get("decided_at"),

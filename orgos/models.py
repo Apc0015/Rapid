@@ -182,6 +182,7 @@ class TaskRun:
     subject: str                     # who/what this is about ("Priya Sharma")
     trigger_type: str                # "message" | "schedule" | "event"
     trigger_payload: dict
+    tenant_id: str = "default"       # which customer this run belongs to (SaaS isolation)
     status: str = RunStatus.TRIGGERED.value
     created_by: str = "system"
     assigned_lead: str = ""          # department lead that planned it
@@ -200,6 +201,7 @@ class TaskRun:
     @staticmethod
     def new(department: str, playbook: str, title: str, subject: str,
             trigger_type: str, trigger_payload: dict, created_by: str,
+            tenant_id: str = "default",
             parent_run_id: Optional[str] = None,
             mesh_group_id: Optional[str] = None) -> "TaskRun":
         return TaskRun(
@@ -210,6 +212,7 @@ class TaskRun:
             subject=subject,
             trigger_type=trigger_type,
             trigger_payload=trigger_payload or {},
+            tenant_id=tenant_id,
             created_by=created_by,
             parent_run_id=parent_run_id,
             mesh_group_id=mesh_group_id,
@@ -225,6 +228,7 @@ class TaskRun:
         done, total = self.progress()
         d = {
             "run_id": self.run_id,
+            "tenant_id": self.tenant_id,
             "department": self.department,
             "playbook": self.playbook,
             "title": self.title,
@@ -259,6 +263,7 @@ class Escalation:
     title: str
     reason: str
     autonomy: str
+    tenant_id: str = "default"
     status: str = EscalationStatus.PENDING.value
     created_at: str = field(default_factory=_now)
     decided_by: Optional[str] = None
@@ -272,6 +277,7 @@ class Escalation:
             run_id=run.run_id,
             step_id=step.step_id,
             department=run.department,
+            tenant_id=run.tenant_id,
             title=f"{run.title} — {step.title}",
             reason=step.escalate_reason or f"Step '{step.title}' needs a human decision.",
             autonomy=step.autonomy,
@@ -283,6 +289,7 @@ class Escalation:
             "run_id": self.run_id,
             "step_id": self.step_id,
             "department": self.department,
+            "tenant_id": self.tenant_id,
             "title": self.title,
             "reason": self.reason,
             "autonomy": self.autonomy,
@@ -304,16 +311,19 @@ class AuditEntry:
     actor: str          # "onboarding-specialist", "verifier", "hr-lead", "founder:ayush"
     event: str          # "step.executed", "step.verified", "run.escalated", ...
     detail: str
+    tenant_id: str = "default"
     at: str = field(default_factory=_now)
 
     @staticmethod
     def new(run_id: str, department: str, actor: str, event: str,
-            detail: str, step_id: Optional[str] = None) -> "AuditEntry":
+            detail: str, step_id: Optional[str] = None,
+            tenant_id: str = "default") -> "AuditEntry":
         return AuditEntry(
             entry_id=_new_id("aud"),
             run_id=run_id,
             step_id=step_id,
             department=department,
+            tenant_id=tenant_id,
             actor=actor,
             event=event,
             detail=detail,
@@ -325,6 +335,7 @@ class AuditEntry:
             "run_id": self.run_id,
             "step_id": self.step_id,
             "department": self.department,
+            "tenant_id": self.tenant_id,
             "actor": self.actor,
             "event": self.event,
             "detail": self.detail,

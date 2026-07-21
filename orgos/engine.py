@@ -49,6 +49,7 @@ class Engine:
     def create_run(self, department: str, playbook_key: str, subject: str,
                    trigger_type: str, payload: dict, created_by: str,
                    title: Optional[str] = None,
+                   tenant_id: str = "default",
                    parent_run_id: Optional[str] = None,
                    mesh_group_id: Optional[str] = None) -> TaskRun:
         pb = self.registry.playbook(playbook_key)
@@ -62,6 +63,7 @@ class Engine:
             subject=subject,
             trigger_type=trigger_type,
             trigger_payload=payload or {},
+            tenant_id=tenant_id,
             created_by=created_by,
             parent_run_id=parent_run_id,
             mesh_group_id=mesh_group_id,
@@ -300,7 +302,8 @@ class Engine:
                step_id: Optional[str] = None) -> None:
         self.store.append_audit(
             AuditEntry.new(run_id=run.run_id, department=run.department,
-                           actor=actor, event=event, detail=detail, step_id=step_id)
+                           actor=actor, event=event, detail=detail, step_id=step_id,
+                           tenant_id=run.tenant_id)
         )
 
 

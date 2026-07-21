@@ -41,6 +41,7 @@ class StepContext:
             subject=self.run.subject,
             data=data,
             run_id=self.run.run_id,
+            tenant_id=getattr(self.run, "tenant_id", "default"),
         )
 
     def find(self, record_type: str, subject: Optional[str] = None) -> Optional[dict]:
@@ -48,6 +49,7 @@ class StepContext:
             department=self.run.department,
             record_type=record_type,
             subject=subject or self.run.subject,
+            tenant_id=getattr(self.run, "tenant_id", "default"),
         )
 
     def trigger_department(self, department: str, playbook_key: str,
@@ -74,6 +76,7 @@ class StepContext:
             trigger_type="mesh",
             payload=inputs or {},
             created_by=f"mesh:{self.run.department}",
+            tenant_id=getattr(self.run, "tenant_id", "default"),
             parent_run_id=self.run.run_id,
             mesh_group_id=mesh_group_id,
         )

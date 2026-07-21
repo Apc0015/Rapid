@@ -24,6 +24,12 @@ from orgos.access import (
     require_department_view, require_department_write, visible_departments,
 )
 
+
+def _tenant(user: dict) -> str:
+    """The customer this request belongs to — the isolation key on every query."""
+    return str(user.get("tenant_id") or "default")
+
+
 # Which run statuses land in which board column.
 BOARD_COLUMNS = {
     "executing": [RunStatus.TRIGGERED.value, RunStatus.PLANNED.value,
@@ -78,7 +84,8 @@ def build_department_router(dept: str) -> APIRouter:
     @router.get("/board")
     async def board(user: dict = Depends(require_department_view(dept))):
         store = get_store()
-        runs = store.list_runs(department=dept)
+        t = _tenant(user)
+        runs = store.list_runs(department=dept, tenant_id=t)
         columns: dict[str, list] = {k: [] for k in BOARD_COLUMNS}
         for run in runs:
             for col, statuses in BOARD_COLUMNS.items():
@@ -87,7 +94,7 @@ def build_department_router(dept: str) -> APIRouter:
                     break
 
         escalations = [e.to_dict() for e in
-                       store.list_escalations(dept, EscalationStatus.PENDING.value)]
+                       store.list_escalations(dept, EscalationStatus.PENDING.value, tenant_id=t)]
         digest = [
             {"run_id": r.run_id, "line": r.digest_line, "status": r.status}
             for r in runs
@@ -115,6 +122,7 @@ def build_department_router(dept: str) -> APIRouter:
                 trigger_type=body.trigger_type,
                 payload=body.inputs or {},
                 created_by=user.get("sub", "unknown"),
+                tenant_id=_tenant(user),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -125,7 +133,7 @@ def build_department_router(dept: str) -> APIRouter:
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str, user: dict = Depends(require_department_view(dept))):
-        run = get_store().get_run(run_id)
+        run = get_store().get_run(run_id, tenant_id=_tenant(user))
         if not run or run.department != dept:
             raise HTTPException(status_code=404, detail="Run not found")
         return run.to_dict()
@@ -133,7 +141,7 @@ def build_department_router(dept: str) -> APIRouter:
     @router.post("/runs/{run_id}/advance")
     async def advance_run(run_id: str, body: AdvanceRequest,
                           user: dict = Depends(require_department_write(dept))):
-        run = get_store().get_run(run_id)
+        run = get_store().get_run(run_id, tenant_id=_tenant(user))
         if not run or run.department != dept:
             raise HTTPException(status_code=404, detail="Run not found")
         run = get_engine().advance(run_id, single_step=body.single_step)
@@ -143,12 +151,12 @@ def build_department_router(dept: str) -> APIRouter:
     async def list_escalations(status: Optional[str] = None,
                                user: dict = Depends(require_department_view(dept))):
         return {"escalations": [e.to_dict() for e in
-                                get_store().list_escalations(dept, status)]}
+                                get_store().list_escalations(dept, status, tenant_id=_tenant(user))]}
 
     @router.post("/escalations/{escalation_id}/decide")
     async def decide_escalation(escalation_id: str, body: DecideRequest,
                                 user: dict = Depends(require_department_write(dept))):
-        esc = get_store().get_escalation(escalation_id)
+        esc = get_store().get_escalation(escalation_id, tenant_id=_tenant(user))
         if not esc or esc.department != dept:
             raise HTTPException(status_code=404, detail="Escalation not found")
         if esc.status != EscalationStatus.PENDING.value:
@@ -164,7 +172,7 @@ def build_department_router(dept: str) -> APIRouter:
 
     @router.get("/audit/{run_id}")
     async def audit(run_id: str, user: dict = Depends(require_department_view(dept))):
-        return {"run_id": run_id, "entries": get_store().list_audit(run_id=run_id)}
+        return {"run_id": run_id, "entries": get_store().list_audit(run_id=run_id, tenant_id=_tenant(user))}
 
     return router
 
@@ -211,20 +219,20 @@ async def list_departments(user: dict = Depends(get_current_user)):
     }
 
 
-def _build_overview(departments: list[str]) -> dict:
+def _build_overview(departments: list[str], tenant_id: str = "default") -> dict:
     """Shared by /org/overview and /org/exec/{key} — same shape, different scope."""
     store = get_store()
     all_escalations, all_digest = [], []
     counts_by_dept = {}
     for dept in departments:
-        runs = store.list_runs(department=dept)
+        runs = store.list_runs(department=dept, tenant_id=tenant_id)
         counts_by_dept[dept] = {
             "total": len(runs),
             "escalated": len([r for r in runs if r.status == RunStatus.ESCALATED.value]),
             "exec": _dept_to_exec(dept),
         }
         all_escalations.extend(e.to_dict() for e in
-                               store.list_escalations(dept, EscalationStatus.PENDING.value))
+                               store.list_escalations(dept, EscalationStatus.PENDING.value, tenant_id=tenant_id))
         all_digest.extend(
             {"department": dept, "run_id": r.run_id, "line": r.digest_line, "status": r.status}
             for r in runs
@@ -243,7 +251,7 @@ def _build_overview(departments: list[str]) -> dict:
 @org_router.get("/overview")
 async def overview(user: dict = Depends(get_current_user)):
     """One digest + one escalation queue across every department this user can see."""
-    return _build_overview(visible_departments(user, DEPARTMENTS))
+    return _build_overview(visible_departments(user, DEPARTMENTS), _tenant(user))
 
 
 @org_router.get("/exec/{exec_key}")
@@ -255,7 +263,7 @@ async def exec_overview(exec_key: str, user: dict = Depends(get_current_user)):
     visible = visible_departments(user, info["departments"])
     if not visible:
         raise HTTPException(status_code=403, detail=f"You don't have access to the {info['title']} view.")
-    result = _build_overview(visible)
+    result = _build_overview(visible, _tenant(user))
     result["exec"] = {"key": exec_key, "title": info["title"], "departments": visible}
     return result
 
@@ -263,7 +271,7 @@ async def exec_overview(exec_key: str, user: dict = Depends(get_current_user)):
 @org_router.get("/mesh/{mesh_group_id}")
 async def mesh_group(mesh_group_id: str, user: dict = Depends(get_current_user)):
     """Every run across every department that belongs to one cross-department task."""
-    runs = get_store().list_runs_by_mesh_group(mesh_group_id)
+    runs = get_store().list_runs_by_mesh_group(mesh_group_id, tenant_id=_tenant(user))
     if not runs:
         raise HTTPException(status_code=404, detail="No runs found for this mesh group")
     allowed = set(visible_departments(user, DEPARTMENTS))
