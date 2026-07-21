@@ -265,32 +265,28 @@ class DBMaster:
         col_rules = self._get_column_rules(dept_tag, user_permissions)
         governed, governance_log = [], []
 
-        # Deny-by-default: columns with no explicit rule follow the constitution's
-        # Article 0 default_action (BLOCK unless overridden). Single source of truth
-        # is the GovernanceFilter so the DB path and the agent-output path agree.
-        from agents.system.governance_filter import get_governance
+        # Deny-by-default and the single decision point: every column resolves
+        # through resolve_column_action(), so this DB result path and the
+        # agent-output path (GovernanceFilter.apply_rules) can never disagree —
+        # including on which roles satisfy an ALLOW_<role> rule.
+        from agents.system.governance_filter import get_governance, resolve_column_action
         default_action = get_governance().default_action
+        user_role = user_permissions.get("role", "")
 
         for row in raw_results:
             new_row = {}
             for col, val in row.items():
-                rule = col_rules.get(col, default_action)
-                if rule == "ALLOW":
+                action, reason = resolve_column_action(col, col_rules, user_role, default_action)
+                if action == "ALLOW":
                     new_row[col] = val
-                    governance_log.append({"col": col, "action": "ALLOW"})
-                elif rule == "ANONYMIZE":
+                    governance_log.append({"col": col, "action": "ALLOW_ROLE" if reason == "role_allowed" else "ALLOW"})
+                elif action == "ANONYMIZE":
                     new_row[col] = f"[ANONYMIZED:{col}]"
                     governance_log.append({"col": col, "action": "ANONYMIZE"})
-                elif rule == "BLOCK":
+                elif reason == "role_blocked":
+                    governance_log.append({"col": col, "action": "BLOCK_ROLE", "severity": "MEDIUM"})
+                else:
                     governance_log.append({"col": col, "action": "BLOCK", "severity": "HIGH"})
-                elif rule.startswith("ALLOW_"):
-                    required_role = rule.split("_", 1)[1].lower()
-                    user_role = (user_permissions.get("role") or "").lower()
-                    if user_role in (required_role, "admin"):
-                        new_row[col] = val
-                        governance_log.append({"col": col, "action": "ALLOW_ROLE"})
-                    else:
-                        governance_log.append({"col": col, "action": "BLOCK_ROLE", "severity": "MEDIUM"})
             governed.append(new_row)
 
         return governed, governance_log

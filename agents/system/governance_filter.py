@@ -42,6 +42,35 @@ ALLOW_ROLE_MAP: dict[str, set[str]] = {
 }
 
 
+def resolve_column_action(
+    column: str, column_rules: dict, user_role: str, default_action: str
+) -> tuple[str, str]:
+    """The single decision point for column governance.
+
+    Every governed path resolves a column's visibility HERE, so they can never
+    disagree — in particular about which roles satisfy an ``ALLOW_<role>`` rule.
+    Returns ``(action, reason)`` where action is one of ALLOW / ANONYMIZE / BLOCK
+    and reason ∈ {explicit, default, role_allowed, role_blocked, unknown_rule}.
+    Fail-closed: an unknown or malformed rule resolves to BLOCK.
+    """
+    explicit = column in column_rules
+    rule = column_rules.get(column, default_action)
+    role = (user_role or "").lower()
+    via = "explicit" if explicit else "default"
+
+    if rule == "ALLOW":
+        return "ALLOW", via
+    if rule == "ANONYMIZE":
+        return "ANONYMIZE", via
+    if rule == "BLOCK":
+        return "BLOCK", via
+    if isinstance(rule, str) and rule.startswith("ALLOW_"):
+        suffix = rule.split("_", 1)[1].lower()
+        allowed = ALLOW_ROLE_MAP.get(suffix, {suffix, "admin"})
+        return ("ALLOW", "role_allowed") if role in allowed else ("BLOCK", "role_blocked")
+    return "BLOCK", "unknown_rule"
+
+
 class RuleSet:
     def __init__(self, column_rules: dict, dept_tag: str, user_role: str):
         self.column_rules = column_rules   # {col: ALLOW|ANONYMIZE|BLOCK|ALLOW_MANAGER}
@@ -177,57 +206,59 @@ class GovernanceFilter:
 
     # ── Rule application ──────────────────────────────────────────────────────
 
+    def _anonymize_value(self, field: str, value, method: Optional[str]):
+        """Format an anonymized value using the column's aggregation method."""
+        if method == "hash_email":
+            return _mask_email(str(value) if value is not None else "")
+        if method in ("team_average", "average", "group_average"):
+            return "[Team average only — contact your manager]"
+        if method == "paraphrase":
+            return "[Paraphrased for privacy]"
+        # No aggregation_required entry for this column — generic mask.
+        return "[ANONYMIZED]"
+
     def apply_rules(self, result: dict, rule_set: RuleSet) -> tuple[dict, list[dict]]:
         """
         Apply Constitution rules field-by-field to a result dict.
+        Every field's visibility is decided by resolve_column_action(), the one
+        shared decision point, so this path and the DB result path never disagree.
         Returns (governed_result, governance_log).
         """
         governed = {}
         log = []
+        user_role = rule_set.user_role
 
         for field, value in result.items():
             explicit = field in rule_set.column_rules
-            rule = rule_set.column_rules.get(field, self.default_action)
-            user_role = rule_set.user_role
+            rule = rule_set.column_rules.get(field)
             via = "explicit" if explicit else "default"
+            action, reason = resolve_column_action(
+                field, rule_set.column_rules, user_role, self.default_action
+            )
 
-            if rule == "ALLOW":
+            if action == "ALLOW":
                 governed[field] = value
-                log.append({"field": field, "action": "ALLOW", "via": via})
-
-            elif rule == "ANONYMIZE":
-                method = self._agg_method.get(field)
-                if method == "hash_email":
-                    governed[field] = _mask_email(str(value) if value is not None else "")
-                elif method in ("team_average", "average", "group_average"):
-                    governed[field] = "[Team average only — contact your manager]"
-                elif method == "paraphrase":
-                    governed[field] = "[Paraphrased for privacy]"
-                else:
-                    # Default fallback: no aggregation_required entry for this column
-                    governed[field] = "[ANONYMIZED]"
-                log.append({"field": field, "action": "ANONYMIZE",
-                             "method": method or "default", "via": via})
-
-            elif rule == "BLOCK":
-                log.append({"field": field, "action": "BLOCK", "severity": "HIGH", "via": via})
-                self._audit_actions.append({"field": field, "action": "BLOCK", "role": user_role, "via": via})
-
-            elif rule.startswith("ALLOW_"):
-                suffix   = rule.split("_", 1)[1].lower()
-                # Use the explicit hierarchy map; fall back to exact-match + admin
-                allowed  = ALLOW_ROLE_MAP.get(suffix, {suffix, "admin"})
-                if user_role.lower() in allowed:
-                    governed[field] = value
+                if reason == "role_allowed":
                     log.append({"field": field, "action": "ALLOW_ROLE", "rule": rule, "via": via})
                 else:
-                    log.append({"field": field, "action": "BLOCK_ROLE", "severity": "MEDIUM", "rule": rule, "via": via})
-                    self._audit_actions.append({"field": field, "action": "BLOCK_ROLE", "role": user_role, "rule": rule})
+                    log.append({"field": field, "action": "ALLOW", "via": via})
 
-            else:
-                # Unknown / malformed rule string — fail closed (deny-by-default).
+            elif action == "ANONYMIZE":
+                method = self._agg_method.get(field)
+                governed[field] = self._anonymize_value(field, value, method)
+                log.append({"field": field, "action": "ANONYMIZE", "method": method or "default", "via": via})
+
+            elif reason == "role_blocked":
+                log.append({"field": field, "action": "BLOCK_ROLE", "severity": "MEDIUM", "rule": rule, "via": via})
+                self._audit_actions.append({"field": field, "action": "BLOCK_ROLE", "role": user_role, "rule": rule})
+
+            elif reason == "unknown_rule":
                 log.append({"field": field, "action": "BLOCK_UNKNOWN", "severity": "HIGH", "rule": rule, "via": via})
                 self._audit_actions.append({"field": field, "action": "BLOCK_UNKNOWN", "role": user_role, "rule": rule})
+
+            else:  # explicit or default BLOCK
+                log.append({"field": field, "action": "BLOCK", "severity": "HIGH", "via": via})
+                self._audit_actions.append({"field": field, "action": "BLOCK", "role": user_role, "via": via})
 
         return governed, log
 
