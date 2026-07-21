@@ -20,17 +20,50 @@ def _today() -> str:
 
 # ── Weekly performance digest ────────────────────────────────────────────────────
 
+def _live_marketing_signals(tenant_id: str) -> dict:
+    """Read this tenant's REAL marketing data from its workspace — tenant- AND
+    department-scoped (marketing only, so this never pulls sales/CS records).
+    Defensive: returns empty on any failure so the digest still runs honestly.
+    """
+    try:
+        from infrastructure.demo_workspace import get_demo_workspace_store
+        rows = get_demo_workspace_store().list_entities(
+            tenant_id, entity_type="campaign", departments={"marketing"})
+    except Exception:
+        return {"campaigns": [], "active_campaigns": []}
+    campaigns = [
+        {"name": r.get("name"),
+         "status": (r.get("data") or {}).get("status"),
+         "channel": (r.get("data") or {}).get("channel"),
+         "audience": (r.get("data") or {}).get("audience")}
+        for r in rows
+    ]
+    return {
+        "campaigns": campaigns,
+        "active_campaigns": [c["name"] for c in campaigns if c.get("status") == "active"],
+    }
+
+
 def pull_metrics(ctx: StepContext) -> HandlerResult:
     week = ctx.inputs.get("week_of", _today())
+    tenant_id = getattr(ctx.run, "tenant_id", "default")
+    # Ad-performance numbers are still supplied on the trigger until a live ads/
+    # analytics connector is wired — that connector only changes THIS handler.
     metrics = {
         "spend": float(ctx.inputs.get("spend", 0) or 0),
         "impressions": int(ctx.inputs.get("impressions", 0) or 0),
         "conversions": int(ctx.inputs.get("conversions", 0) or 0),
     }
-    ctx.record("weekly_metrics", {"week_of": week, **metrics, "pulled_at": _today()})
-    return HandlerResult(summary=f"Pulled metrics for week of {week}: "
-                                f"${metrics['spend']:.0f} spend, {metrics['conversions']} conversions.",
-                         evidence=metrics)
+    # Real data: the tenant's own marketing campaigns, read from its workspace.
+    signals = _live_marketing_signals(tenant_id)
+    ctx.record("weekly_metrics", {"week_of": week, **metrics, **signals, "pulled_at": _today()})
+    n = len(signals["campaigns"])
+    return HandlerResult(
+        summary=(f"Pulled metrics for week of {week}: ${metrics['spend']:.0f} spend, "
+                 f"{metrics['conversions']} conversions; read {n} live marketing "
+                 f"campaign(s) from the workspace."),
+        evidence={"campaign_count": n, **metrics},
+    )
 
 
 def summarize_performance(ctx: StepContext) -> HandlerResult:
@@ -56,13 +89,21 @@ def draft_next_week_plan(ctx: StepContext) -> HandlerResult:
 
     spend = metrics.get("spend", 0) or 0
     conv = metrics.get("conversions", 0) or 0
+    campaigns = metrics.get("campaigns", []) or []
+    campaign_line = "\nLive campaigns on file: " + (
+        "; ".join(
+            f"{c.get('name')} ({c.get('channel') or 'channel n/a'}, {c.get('status') or 'status n/a'})"
+            for c in campaigns
+        ) if campaigns else "none on file."
+    )
     prompt = (
-        "You are the marketing lead for this company. Using ONLY the numbers "
+        "You are the marketing lead for this company. Using ONLY the real data "
         "below, write next week's marketing plan as 3-5 concrete, prioritized "
-        "actions. Be specific about channel and budget direction; do not invent "
-        "figures that aren't given.\n\n"
+        "actions. Reference the actual campaigns where relevant; do not invent "
+        "figures or campaigns that aren't listed.\n\n"
         f"This week: ${spend:.0f} spend, {conv} conversions"
         + (f", ${cpa:.2f} cost per acquisition." if cpa else ", no conversions.")
+        + campaign_line
     )
 
     from orgos.reasoning import synthesize

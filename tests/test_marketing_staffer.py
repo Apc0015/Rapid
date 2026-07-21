@@ -23,6 +23,15 @@ def engine(tmp_path):
     return Engine(store=OrgStore(str(tmp_path / "orgos.db")))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_workspace(tmp_path, monkeypatch):
+    """Point the workspace store at a throwaway DB so the agent's campaign reads
+    (and the demo auto-seed they trigger) never touch the shared workspace DB."""
+    from infrastructure.demo_workspace import DemoWorkspaceStore
+    store = DemoWorkspaceStore(str(tmp_path / "workspace.db"))
+    monkeypatch.setattr("infrastructure.demo_workspace.get_demo_workspace_store", lambda: store)
+
+
 def _weekly(engine, subject, tenant="tenant-a"):
     run = engine.create_run(
         department="marketing", playbook_key="weekly_digest", subject=subject,
@@ -77,6 +86,33 @@ def test_going_live_stops_for_human_approval(engine):
     assert run.status == RunStatus.DONE.value
     camp = engine.store.find_record("marketing", "campaign", "Spring Launch", tenant_id="tenant-a")
     assert camp["data"]["status"] == "live"
+
+
+def test_pull_metrics_reads_real_marketing_campaigns(engine):
+    run = engine.create_run(
+        department="marketing", playbook_key="weekly_digest", subject="Week 5",
+        trigger_type="manual", payload={"spend": 100, "conversions": 3},
+        created_by="t", tenant_id="tenant-a",
+    )
+    engine.advance(run.run_id)
+    rec = engine.store.find_record("marketing", "weekly_metrics", "Week 5", tenant_id="tenant-a")
+
+    # The agent read the tenant's REAL marketing campaigns from its workspace —
+    # not just the hand-fed ad numbers — and only marketing ones (dept-scoped).
+    campaigns = rec["data"]["campaigns"]
+    assert isinstance(campaigns, list) and len(campaigns) >= 1
+    assert any("Operations Intelligence" in (c.get("name") or "") for c in campaigns)
+
+
+def test_marketing_read_is_department_scoped(engine):
+    # The seeded workspace also holds sales leads/deals (Asteron, Beacon). The
+    # marketing agent must read marketing campaigns ONLY — never the sales
+    # pipeline. This is the governance boundary on "real data in".
+    from orgos.departments.marketing.specialists import _live_marketing_signals
+    signals = _live_marketing_signals("tenant-a")
+    names = [c.get("name") or "" for c in signals["campaigns"]]
+    assert any("Operations Intelligence" in n for n in names)          # marketing: present
+    assert not any(("Asteron" in n) or ("expansion" in n) for n in names)  # sales: absent
 
 
 def test_declining_go_live_never_publishes(engine):
