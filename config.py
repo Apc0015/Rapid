@@ -16,11 +16,6 @@ TOP_K = 10                # chunks returned per hybrid search
 HIGH_CONF = 0.65          # answer returned directly to user
 LOW_CONF = 0.40           # below this → fallback (web search or escalation)
 
-# ── Confidence scoring weights ────────────────────────────────────────────────
-CONF_CONTEXT_WEIGHT = 0.30
-CONF_FAITHFULNESS_WEIGHT = 0.50
-CONF_COMPLETENESS_WEIGHT = 0.20
-
 # ── DB ────────────────────────────────────────────────────────────────────────
 def _resolve_db_path() -> str:
     """
