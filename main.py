@@ -33,18 +33,12 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.responses import JSONResponse
 
 # ── Shared singletons ─────────────────────────────────────────────────────────
-from shared import (
-    AGENT_REGISTRY,
-    orchestrator,
-    spokesperson, planner, fusion, web_agent, supervisor,
-    INTENT_TRIVIAL, INTENT_GENERAL, INTENT_AMBIGUOUS,
-    mem,
-)
+from shared import AGENT_REGISTRY
 from agents.system.audit_logger import get_audit
 from agents.system.governance_filter import get_governance
 from routers.deps import get_current_user
 from infrastructure.jwt_manager import get_jwt_manager
-from infrastructure.query_service import QueryRequest, QueryResponse, run_query
+from infrastructure.query_service import QueryRequest, QueryResponse
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 from routers.auth           import router as auth_router
@@ -82,8 +76,6 @@ from routers.library        import router as library_router
 from routers.packs          import router as packs_router
 
 # Phase 9: Dynamic Agent Management
-from routers.custom_agents    import router as custom_agents_router
-from routers.nl_agent_creator import router as nl_agent_creator_router
 from routers.hr               import router as hr_router
 from routers.it               import router as it_router
 from routers.finance          import router as finance_router
@@ -226,19 +218,7 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning(f"JWT cleanup failed: {e}")
 
-    # Periodic AgentMemory stale-context cleanup (every 60 seconds)
-    async def _memory_cleanup_loop():
-        while True:
-            await asyncio.sleep(60)
-            try:
-                removed = await mem.cleanup_stale(max_age=120)
-                if removed:
-                    logger.info(f"AgentMemory cleanup: removed {removed} stale query context(s)")
-            except Exception as e:
-                logger.warning(f"AgentMemory cleanup failed: {e}")
-
     cleanup_task = asyncio.create_task(_cleanup_loop())
-    memory_cleanup_task = asyncio.create_task(_memory_cleanup_loop())
 
     # Schedule execution is opt-in because production deployments should assign
     # exactly one worker replica this responsibility.
@@ -296,7 +276,6 @@ async def lifespan(app: FastAPI):
         logger.warning(f"FolderWatcher shutdown warning: {e}")
 
     cleanup_task.cancel()
-    memory_cleanup_task.cancel()
 
     if _monitor_task:
         _monitor_task.cancel()
@@ -389,8 +368,6 @@ app.include_router(library_router)
 app.include_router(packs_router)
 
 # Phase 9: Dynamic Agent Management
-app.include_router(custom_agents_router)
-app.include_router(nl_agent_creator_router)
 app.include_router(people_ops_router)
 app.include_router(organization_router)
 app.include_router(organization_data_router)
@@ -436,37 +413,6 @@ async def _legacy_product_redirect(legacy_path: str):
     return RedirectResponse(url=f"{_portal_url()}/workspace/overview")
 
 
-# ── Main query endpoint ───────────────────────────────────────────────────────
-
-@app.post("/query", response_model=QueryResponse, deprecated=True)
-@limiter.limit("30/minute")
-async def query(
-    request:          Request,
-    req:              QueryRequest,
-    background_tasks: BackgroundTasks,
-    current_user:     dict = Depends(get_current_user),
-):
-    """
-    Backward-compatible raw agent query endpoint — JWT Bearer auth required.
-    Product surfaces use /intelligence/ask, which resolves shared scope,
-    permissions, evidence, and specialist routing first.
-    Rate limited: 30 queries/minute per IP.
-    Times out after 120 seconds.
-    """
-    if os.getenv("RAPID_ENABLE_LEGACY_INTELLIGENCE", "false" if os.getenv("RAPID_ENV", "development") == "production" else "true").lower() not in {"1", "true", "yes"}:
-        raise HTTPException(status_code=410, detail="This endpoint has been retired. Use /intelligence/ask.")
-    # Enforce max query length
-    if len(req.query) > 2000:
-        raise HTTPException(status_code=400, detail="Query too long (max 2000 characters)")
-
-    try:
-        return await asyncio.wait_for(
-            run_query(req, current_user, background_tasks),
-            timeout=120.0,
-        )
-    except asyncio.TimeoutError:
-        logger.error(f"Query timed out for user={current_user['sub']}: '{req.query[:60]}'")
-        raise HTTPException(status_code=504, detail="Query timed out — try a simpler question")
 # ── Lean grounded Q&A ──────────────────────────────────────────────────────────
 # /query and /intelligence/ask fan out to the whole multi-agent org — dozens
 # of LLM calls, built for cloud providers. /ask is the lean alternative: one

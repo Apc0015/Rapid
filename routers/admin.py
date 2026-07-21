@@ -106,63 +106,6 @@ async def unassign_division_head(division: str, current_user: dict = Depends(req
     return {"status": "ok"}
 
 
-# ── Agent onboarding requests ─────────────────────────────────────────────────
-
-class RejectBody(BaseModel):
-    note: Optional[str] = ""
-
-
-@router.get("/agent-requests")
-async def list_agent_requests(
-    status: Optional[str] = None,
-    current_user: dict = Depends(require_admin),
-):
-    """
-    Admin: list all agent onboarding requests.
-    Filter by status: pending / approved / rejected.
-    """
-    from agents.system.agent_supervisor import get_agent_representative
-    rep = get_agent_representative()
-    return {"requests": rep.list_requests(status=status)}
-
-
-@router.post("/agent-requests/{request_id}/approve")
-async def approve_agent_request(
-    request_id: str,
-    current_user: dict = Depends(require_admin),
-):
-    """
-    Admin approves an agent onboarding request.
-    The new stub agent is registered into the live AgentRegistry immediately.
-    No application restart required.
-    """
-    from agents.system.agent_supervisor import get_agent_representative
-    rep    = get_agent_representative()
-    result = rep.approve(request_id, reviewed_by=current_user.get("sub", "admin"))
-    if not result:
-        raise HTTPException(status_code=404, detail="Request not found")
-    return {"status": "approved", "request": result}
-
-
-@router.post("/agent-requests/{request_id}/reject")
-async def reject_agent_request(
-    request_id: str,
-    body: RejectBody,
-    current_user: dict = Depends(require_admin),
-):
-    """Admin rejects an agent onboarding request with an optional note."""
-    from agents.system.agent_supervisor import get_agent_representative
-    rep    = get_agent_representative()
-    result = rep.reject(
-        request_id,
-        reviewed_by=current_user.get("sub", "admin"),
-        note=body.note or "",
-    )
-    if not result:
-        raise HTTPException(status_code=404, detail="Request not found")
-    return {"status": "rejected", "request": result}
-
-
 # ── Audit retention management ────────────────────────────────────────────────
 
 @router.get("/audit/retention")

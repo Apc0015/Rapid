@@ -2,9 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
-import config
 from agents.system.audit_logger import AuditLogger
-from infrastructure.custom_agent_store import create_custom_agent, get_custom_agent, list_custom_agents
 from infrastructure.demo_workspace import get_demo_workspace_store
 from routers.deps import require_admin, user_capabilities
 from routers.deps import get_current_user
@@ -66,16 +64,6 @@ def test_employee_cannot_update_a_department_action(monkeypatch, tmp_path):
     response = client.post(f"/workspace/actions/{action['id']}/status", json={"status": "done"})
 
     assert response.status_code == 403
-
-
-def test_custom_agent_configuration_is_tenant_scoped(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "rapid.db"))
-    first = create_custom_agent("tenant-a", "sales", "Renewal Specialist")
-    second = create_custom_agent("tenant-b", "sales", "Renewal Specialist")
-
-    assert [record["agent_id"] for record in list_custom_agents("tenant-a")] == [first["agent_id"]]
-    assert [record["agent_id"] for record in list_custom_agents("tenant-b")] == [second["agent_id"]]
-    assert get_custom_agent(first["agent_id"], "tenant-b") is None
 
 
 def test_audit_events_and_agent_scores_are_tenant_scoped(tmp_path):

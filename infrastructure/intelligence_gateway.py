@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import uuid
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks
@@ -58,6 +59,24 @@ class IntelligenceResponse(BaseModel):
 
 
 LegacyExecutor = Callable[[str, dict[str, Any], BackgroundTasks, list[dict[str, str]]], Awaitable[Any]]
+
+
+@dataclass
+class _SynthesisResult:
+    """Result shape returned by the governed single-call synthesizer.
+
+    Mirrors the fields the organization flow reads from the old engine's
+    response, so the call site is unchanged after the bidding mesh removal.
+    """
+
+    answer: str
+    confidence: float
+    sources: list = field(default_factory=list)
+    provider_used: Optional[str] = None
+    warning: Optional[str] = None
+    dept_tags: list = field(default_factory=list)
+    action_taken: str = "governed_synthesis"
+    query_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
 class IntelligenceGateway:
@@ -159,7 +178,7 @@ class IntelligenceGateway:
         prompt = self._build_evidence_prompt(request.question, request.workspace_view, departments, evidence)
         try:
             result = await asyncio.wait_for(
-                (legacy_executor or self._run_legacy_engine)(prompt, current_user, background_tasks, request.history),
+                (legacy_executor or self._synthesize_answer)(prompt, current_user, background_tasks, request.history),
                 timeout=self._organization_ai_timeout_seconds(),
             )
             if not self._is_useful_answer(getattr(result, "answer", None)):
@@ -430,18 +449,34 @@ class IntelligenceGateway:
         return "\n".join(lines)
 
     @staticmethod
-    async def _run_legacy_engine(
-        question: str, current_user: dict[str, Any], background_tasks: BackgroundTasks, history: list[dict[str, str]]
-    ) -> Any:
-        from infrastructure.query_service import ChatMessage, QueryRequest, run_query
+    async def _synthesize_answer(
+        prompt: str, current_user: dict[str, Any], background_tasks: BackgroundTasks, history: list[dict[str, str]]
+    ) -> "_SynthesisResult":
+        """One governed LLM call over the already-collected, permission-scoped evidence.
 
-        return await run_query(
-            QueryRequest(
-                query=question,
-                history=[ChatMessage(role=item.get("role", "user"), content=item.get("content", "")) for item in history[-6:]],
-            ),
-            current_user,
-            background_tasks,
+        Replaces the removed multi-agent bidding engine: same governed evidence in,
+        a plain answer out, but a single deterministic call instead of agents
+        competing on confidence. See DECISIONS.md (Phase 0 cleanup).
+        """
+        from infrastructure.db_master import set_current_tenant
+        from infrastructure.llm_adapter import get_llm_for_tenant
+        from infrastructure.llm_client import set_active_llm
+        from infrastructure.tenant_manager import DEFAULT_TENANT_ID
+        from shared import spokesperson
+
+        tenant_id = str(current_user.get("tenant_id") or DEFAULT_TENANT_ID)
+        set_current_tenant(tenant_id)
+        tenant_llm = await get_llm_for_tenant(tenant_id)
+        set_active_llm(tenant_llm)
+        history_context = "\n".join(
+            f"{item.get('role', 'user').upper()}: {item.get('content', '')}" for item in history[-6:]
+        )
+        result = await spokesperson.handle_general(prompt, history_context, "")
+        return _SynthesisResult(
+            answer=getattr(result, "summary", "") or "",
+            confidence=float(getattr(result, "confidence", 0.0) or 0.0),
+            sources=list(getattr(result, "citations", []) or []),
+            provider_used=getattr(tenant_llm, "provider_id", "auto"),
         )
 
     @staticmethod

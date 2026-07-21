@@ -15,7 +15,6 @@ TOP_K = 10                # chunks returned per hybrid search
 # ── Confidence thresholds ─────────────────────────────────────────────────────
 HIGH_CONF = 0.65          # answer returned directly to user
 LOW_CONF = 0.40           # below this → fallback (web search or escalation)
-MIN_BID_CONF = 0.50       # minimum confidence for a bid to be considered
 
 # ── Confidence scoring weights ────────────────────────────────────────────────
 CONF_CONTEXT_WEIGHT = 0.30
