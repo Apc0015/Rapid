@@ -15,7 +15,7 @@ RAPID is currently operated as an invite-only beta. A founder requests access at
   - **HR, IT, Finance, Marketing** — `orgos/`, real per-step specialists, RAG-grounded answers, independent verification against actual recorded state
   - **Legal, Sales, Operations, Procurement, R&D, Customer Success** — `infrastructure/people_ops_store.py`, a generic sandboxed playbook engine (each step's "evidence" is a fixed stub, not real work) pending a real orgos implementation
   - IT and Finance additionally have a couple of orgos-uncovered scenarios (generic access requests, monthly financial close) still running on the sandboxed engine alongside their real orgos playbooks
-- **Persistent RAPID chat** — page-aware, tenant-isolated conversations that retain approved evidence, source context, and follow-up history, served through `infrastructure/intelligence_gateway.py` (`/intelligence/ask`). `/ask` (`main.py`) is a second, simpler entry point — one department, one retrieval call, one synthesis call — useful standalone or on a local model without the gateway's broader evidence collection; `/query` is the original multi-agent fan-out both newer paths sit in front of.
+- **Persistent RAPID chat** — page-aware, tenant-isolated conversations that retain approved evidence, source context, and follow-up history, served through `infrastructure/intelligence_gateway.py` (`/intelligence/ask`). `/ask` (`main.py`) is a second, simpler entry point — one department, one retrieval call, one synthesis call — useful standalone or on a local model without the gateway's broader evidence collection. (The original multi-agent `/query` fan-out and its bidding mesh were removed in Phase 0 — see [DECISIONS.md](DECISIONS.md).)
 - **Startup-first setup** — a focused starting workspace for product, growth, customer, finance, delivery, and operations work; other operating models remain configurable for future expansion
 - **Project intelligence** — isolated project data spaces, scoped queries, skills, generated documents, portfolio analysis, and team membership
 - **Organization knowledge** — document upload, extraction/OCR, PII handling, source sync jobs, permissions, lexical/vector retrieval, and optional Qdrant
@@ -86,8 +86,8 @@ RAPID/
 │
 ├── infrastructure/            Product services and storage adapters
 │   ├── intelligence_gateway.py Shared intelligence scope, evidence, and specialist routing
-│   ├── query_service.py       Multi-agent governed query pipeline underlying /query and,
-│   │                            via intelligence_gateway, /intelligence/ask
+│   ├── query_service.py       Request/response models for the grounded /ask endpoint
+│   │                            (the multi-agent /query pipeline was removed in Phase 0)
 │   ├── organization_rag.py    Permission-aware organization retrieval — uses the same FAISS
 │   │                            store orgos reads/writes (one vector backend, two ingestion
 │   │                            paths: this one for portal uploads, scripts/build_indexes.py
@@ -333,7 +333,7 @@ nginx (:80)
         ├── orgos: /hr /it /finance /marketing /org/*  — real engine, 4 departments
         ├── Sandboxed engine: /people-ops/* /organization/*  — 6 departments + 2 extra scenarios
         ├── /ask                                — lean single-department grounded Q&A (recommended)
-        ├── /query, /intelligence/ask            — older multi-agent fan-out (many LLM calls)
+        ├── /intelligence/ask                   — governed product chat (one AI call over scoped evidence)
         ├── Tenant/Admin API: users, configuration, organization structure, integrations
         ├── Project API: scoped queries, skills, approvals, generated documents
         └── Unified intelligence gateway
